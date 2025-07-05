@@ -32,7 +32,7 @@ if st.button("🎬 Generate Video"):
 
             # Create video
             try:
-                clip = ImageClip(image_path).set_duration(video_duration).resize(height=720)
+                clip = ImageClip(image_path).set_duration(video_duration).resize(height=720, resample='lanczos')
                 txt_clip = (TextClip(text_input, fontsize=font_size, color=text_color, size=clip.size, method='caption')
                             .set_duration(video_duration)
                             .set_position('center'))
