@@ -1,2 +1,6 @@
-streamlit
-moviepy
+streamlit>=1.34   # or latest stable
+moviepy==1.0.3
+imageio>=2.9
+imageio-ffmpeg>=0.4.9   # moviepy needs a working FFmpeg binary
+numpy
+Pillow
