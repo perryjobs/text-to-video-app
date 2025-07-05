@@ -13,5 +13,5 @@ Create quote/reel videos from text, background images, and music using this simp
 
 ### 1. Clone the repo
 ```bash
-git clone https://github.com/your-username/text-to-video-app.git
+git clone https://github.com/perryjobs/text-to-video.git
 cd text-to-video-app
