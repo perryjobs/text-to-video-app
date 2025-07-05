@@ -1,11 +1,11 @@
 import streamlit as st
 from moviepy.editor import *
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import os
 
 st.set_page_config(page_title="Motivational Video Maker", layout="centered")
 st.title("📽️ Motivational Video Maker")
-st.markdown("Create simple quote/reel videos with text, background image, and music.")
+st.markdown("Create motivational videos with quotes, images, and music — no ImageMagick required!")
 
 # Inputs
 text_input = st.text_area("✍️ Enter Your Quote or Message", height=150)
@@ -22,29 +22,41 @@ if st.button("🎬 Generate Video"):
     else:
         with st.spinner("Creating your video..."):
             try:
-                # Save uploaded files
-                image_path = "resized_bg_image.png"
-                music_path = "bg_music.mp3"
+                # Step 1: Prepare background image
+                img = Image.open(image).convert("RGB").resize((720, 1280))
+                draw = ImageDraw.Draw(img)
 
-                # Resize image using Pillow before passing to moviepy
-                pil_img = Image.open(image)
-                pil_img = pil_img.resize((720, 1280), resample=Image.Resampling.LANCZOS)
-                pil_img.save(image_path)
+                # Load font (Streamlit Cloud doesn't support custom fonts easily)
+                font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
 
-                with open(music_path, "wb") as f:
+                # Wrap and center text
+                lines = []
+                words = text_input.split()
+                while words:
+                    line = ''
+                    while words and draw.textlength(line + words[0], font=font) < 680:
+                        line += words.pop(0) + ' '
+                    lines.append(line)
+                y_text = (1280 - len(lines) * font_size) // 2
+                for line in lines:
+                    width = draw.textlength(line, font=font)
+                    draw.text(((720 - width) / 2, y_text), line.strip(), font=font, fill=text_color)
+                    y_text += font_size + 10
+
+                # Save image
+                img.save("frame.png")
+
+                # Step 2: Create video from image
+                clip = ImageClip("frame.png").set_duration(video_duration)
+
+                # Step 3: Add music
+                with open("bg_music.mp3", "wb") as f:
                     f.write(music.read())
-
-                # Create video
-                clip = ImageClip(image_path).set_duration(video_duration)
-                txt_clip = (TextClip(text_input, fontsize=font_size, color=text_color, size=clip.size, method='caption')
-                            .set_duration(video_duration)
-                            .set_position('center'))
-
-                audio = AudioFileClip(music_path).subclip(0, video_duration)
-                final = CompositeVideoClip([clip, txt_clip]).set_audio(audio)
+                audio = AudioFileClip("bg_music.mp3").subclip(0, video_duration)
+                final = clip.set_audio(audio)
                 final.write_videofile("output.mp4", fps=24, codec='libx264', audio_codec='aac')
 
-                st.success("Video created successfully!")
+                st.success("✅ Video created successfully!")
                 st.video("output.mp4")
 
             except Exception as e:
