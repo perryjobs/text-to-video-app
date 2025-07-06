@@ -5,6 +5,7 @@ import tempfile
 import requests
 import os
 from io import BytesIO
+import numpy as np
 
 st.set_page_config(page_title="Text-to-Video App")
 st.title("🎬 Text-to-Video Generator")
@@ -59,7 +60,7 @@ elif vid_mode == "Unsplash":
         if data.get("urls"):
             img_url = data["urls"]["regular"]
             image = Image.open(BytesIO(requests.get(img_url).content)).resize((W, H))
-            img_clip = ImageClip(image).set_duration(5)
+            img_clip = ImageClip(np.array(image)).set_duration(5)
             vid_path = tempfile.mktemp(suffix=".mp4")
             img_clip.write_videofile(vid_path, fps=24)
         else:
@@ -82,7 +83,7 @@ if vid_path:
         text_position = ((base_vid.size[0] - text_w) // 2, (base_vid.size[1] - text_h) // 2)
         draw.text(text_position, text_input, font=font, fill=(255, 255, 255, 255))
 
-        text_clip = ImageClip(img).set_duration(base_vid.duration)
+        text_clip = ImageClip(np.array(img)).set_duration(base_vid.duration)
         final = CompositeVideoClip([base_vid, text_clip])
 
         # Save to temp file
