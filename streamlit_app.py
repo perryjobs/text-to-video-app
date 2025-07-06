@@ -53,13 +53,19 @@ if vid_mode == "Pexels":
         if not videos:
             st.error("No videos found.")
             st.stop()
+        used_urls = set()
         for video in videos:
-            video_url = video["video_files"][0]["link"]
-            vid_temp = tempfile.mktemp(suffix=".mp4")
-            with open(vid_temp, "wb") as f:
-                f.write(requests.get(video_url).content)
-            clip = VideoFileClip(vid_temp).without_audio().resize(height=H)
-            clips.append(clip)
+            # Sort by resolution and pick best quality MP4
+            video_files = sorted(video["video_files"], key=lambda v: v["height"], reverse=True)
+            mp4_file = next((v for v in video_files if v["file_type"] == "video/mp4"), None)
+            if mp4_file and mp4_file["link"] not in used_urls:
+                video_url = mp4_file["link"]
+                used_urls.add(video_url)
+                vid_temp = tempfile.mktemp(suffix=".mp4")
+                with open(vid_temp, "wb") as f:
+                    f.write(requests.get(video_url).content)
+                clip = VideoFileClip(vid_temp).without_audio().resize(height=H)
+                clips.append(clip)
 
 # Handle Unsplash API
 elif vid_mode == "Unsplash":
