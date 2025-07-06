@@ -1,5 +1,12 @@
 import streamlit as st
-from moviepy.editor import VideoFileClip, concatenate_videoclips, ImageClip, CompositeVideoClip
+from moviepy.editor import (
+    VideoFileClip,
+    concatenate_videoclips,
+    ImageClip,
+    CompositeVideoClip,
+    crossfadein,
+    crossfadeout
+)
 from PIL import Image, ImageDraw, ImageFont
 import tempfile
 import requests
@@ -22,73 +29,86 @@ text_input = st.text_area("Enter your message:", "Your text here")
 
 # Mode selection
 vid_mode = st.sidebar.radio("Video Source", ["Upload", "Pexels", "Unsplash"])
-vid_file = None
-vid_path = None  # Ensure vid_path is always defined
+num_clips = st.sidebar.slider("Number of Clips", min_value=1, max_value=5, value=3)
+clips = []
 
-# Handle video upload
-if vid_mode == "Upload":
-    vid_file = st.sidebar.file_uploader("Upload Video", type=["mp4"])
-    if not vid_file:
-        st.warning("Please upload a video.")
-        st.stop()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_vid:
-        tmp_vid.write(vid_file.read())
-        vid_path = tmp_vid.name
+# Combine clips with dissolve transition
+def combine_with_dissolve(clips, duration=1):
+    combined = clips[0]
+    for clip in clips[1:]:
+        combined = concatenate_videoclips([
+            combined.crossfadeout(duration),
+            clip.crossfadein(duration)
+        ], method="compose")
+    return combined
 
 # Handle Pexels API
-elif vid_mode == "Pexels":
+if vid_mode == "Pexels":
     query = st.sidebar.text_input("Search Pexels", "nature")
-    if st.sidebar.button("Get Video"):
+    if st.sidebar.button("Get Videos"):
         headers = {"Authorization": PEXELS_KEY}
-        res = requests.get(f"https://api.pexels.com/videos/search?query={query}&per_page=1", headers=headers)
+        res = requests.get(f"https://api.pexels.com/videos/search?query={query}&per_page={num_clips}", headers=headers)
         data = res.json()
-        if data.get("videos"):
-            video_url = data["videos"][0]["video_files"][0]["link"]
-            vid_path = tempfile.mktemp(suffix=".mp4")
-            with open(vid_path, "wb") as f:
-                f.write(requests.get(video_url).content)
-        else:
-            st.error("No video found.")
+        videos = data.get("videos", [])
+        if not videos:
+            st.error("No videos found.")
             st.stop()
+        for video in videos:
+            video_url = video["video_files"][0]["link"]
+            vid_temp = tempfile.mktemp(suffix=".mp4")
+            with open(vid_temp, "wb") as f:
+                f.write(requests.get(video_url).content)
+            clip = VideoFileClip(vid_temp).without_audio().resize(height=H)
+            clips.append(clip)
 
-# Handle Unsplash fallback (image only)
+# Handle Unsplash API
 elif vid_mode == "Unsplash":
     query = st.sidebar.text_input("Search Unsplash", "landscape")
-    if st.sidebar.button("Get Image"):
-        res = requests.get(f"https://api.unsplash.com/photos/random?query={query}", headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"})
-        data = res.json()
-        if data.get("urls"):
-            img_url = data["urls"]["regular"]
-            image = Image.open(BytesIO(requests.get(img_url).content)).resize((W, H))
-            img_clip = ImageClip(np.array(image)).set_duration(5)
-            vid_path = tempfile.mktemp(suffix=".mp4")
-            img_clip.write_videofile(vid_path, fps=24)
-        else:
-            st.error("No image found.")
-            st.stop()
+    if st.sidebar.button("Get Images"):
+        for _ in range(num_clips):
+            res = requests.get(f"https://api.unsplash.com/photos/random?query={query}",
+                               headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"})
+            data = res.json()
+            if data.get("urls"):
+                img_url = data["urls"]["regular"]
+                image = Image.open(BytesIO(requests.get(img_url).content)).resize((W, H))
+                img_clip = ImageClip(np.array(image)).set_duration(5)
+                clips.append(img_clip)
+            else:
+                st.warning("One or more images could not be retrieved.")
 
-# Process video and overlay text
-if vid_path:
+# Handle Upload
+elif vid_mode == "Upload":
+    uploaded_files = st.sidebar.file_uploader("Upload Videos", type=["mp4"], accept_multiple_files=True)
+    if not uploaded_files:
+        st.warning("Please upload one or more videos.")
+        st.stop()
+    for vid_file in uploaded_files:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_vid:
+            tmp_vid.write(vid_file.read())
+            clip = VideoFileClip(tmp_vid.name).without_audio().resize(height=H)
+            clips.append(clip)
+
+# Combine and render
+if clips:
     try:
-        clip = VideoFileClip(vid_path).without_audio()
-        base_vid = clip.resize(height=H if clip.size[1] > clip.size[0] else W)
+        final = combine_with_dissolve(clips, duration=1)
 
-        # Create text image with PIL
-        img = Image.new("RGBA", base_vid.size, (0, 0, 0, 0))
+        # Create text overlay
+        img = Image.new("RGBA", final.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
         bbox = draw.textbbox((0, 0), text_input, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
-        text_position = ((base_vid.size[0] - text_w) // 2, (base_vid.size[1] - text_h) // 2)
+        text_position = ((final.size[0] - text_w) // 2, (final.size[1] - text_h) // 2)
         draw.text(text_position, text_input, font=font, fill=(255, 255, 255, 255))
 
-        text_clip = ImageClip(np.array(img)).set_duration(base_vid.duration)
-        final = CompositeVideoClip([base_vid, text_clip])
+        text_clip = ImageClip(np.array(img)).set_duration(final.duration)
+        composed = CompositeVideoClip([final, text_clip])
 
-        # Save to temp file
         out_path = tempfile.mktemp(suffix=".mp4")
-        final.write_videofile(out_path, fps=24)
+        composed.write_videofile(out_path, fps=24)
 
         st.video(out_path)
         with open(out_path, "rb") as f:
@@ -97,4 +117,4 @@ if vid_path:
     except Exception as e:
         st.error(f"Failed to generate video: {e}")
 else:
-    st.info("Please select a video or image to begin.")
+    st.info("Please select or upload videos/images to begin.")
