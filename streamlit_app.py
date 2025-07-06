@@ -1,4 +1,4 @@
-# streamlit_app.py (finalized version)
+# streamlit_app.py (updated version with bug fix)
 import streamlit as st
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
@@ -63,7 +63,7 @@ def apply_watermark(image, wm_img, scale):
     return image
 
 st.set_page_config("Motivational Video Maker", layout="wide")
-st.title("🎬 Motivational/Quote Video Maker")
+st.title("\U0001F3AC Motivational/Quote Video Maker")
 
 st.sidebar.header("Settings")
 media_type = st.sidebar.selectbox("Media Type", ["Image", "Video"])
@@ -73,12 +73,18 @@ W, H = (720, 1280) if fmt.startswith("Vertical") else (720, 720)
 # Background Input
 if media_type == "Image":
     bg_mode = st.sidebar.radio("Image Source", ["Upload", "Unsplash"], horizontal=True)
-    bg_file = st.sidebar.file_uploader("Upload Image" if bg_mode == "Upload" else None, type=["jpg", "jpeg", "png"])
-    unsplash_kw = st.sidebar.text_input("Unsplash keyword", "sunrise") if bg_mode == "Unsplash" else ""
+    if bg_mode == "Upload":
+        bg_file = st.sidebar.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
+    else:
+        bg_file = None
+        unsplash_kw = st.sidebar.text_input("Unsplash keyword", "sunrise")
 else:
     vid_mode = st.sidebar.radio("Video Source", ["Upload", "Pexels"], horizontal=True)
-    vid_file = st.sidebar.file_uploader("Upload Video" if vid_mode == "Upload" else None, type=["mp4"])
-    pexels_kw = st.sidebar.text_input("Pexels keyword", "nature") if vid_mode == "Pexels" else ""
+    if vid_mode == "Upload":
+        vid_file = st.sidebar.file_uploader("Upload Video", type=["mp4"])
+    else:
+        vid_file = None
+        pexels_kw = st.sidebar.text_input("Pexels keyword", "nature")
 
 music_mode = st.sidebar.radio("Music", ["Upload", "Sample"], horizontal=True)
 music_file = st.sidebar.file_uploader("Upload MP3" if music_mode == "Upload" else None, type=["mp3"])
@@ -161,13 +167,19 @@ if st.button("Generate Video"):
     if voiceover:
         full_text = " ".join(quotes)
         tts_path = os.path.join(TEMP_DIR, "voice.mp3")
-        gTTS(full_text, lang=voice_lang).save(tts_path)
-        voice = AudioFileClip(tts_path).set_duration(final_video.duration)
-        audio = CompositeAudioClip([voice, bg_audio]) if bg_audio else voice
+        try:
+            gTTS(full_text, lang=voice_lang).save(tts_path)
+            voice = AudioFileClip(tts_path).set_duration(final_video.duration)
+            audio = CompositeAudioClip([voice, bg_audio]) if bg_audio else voice
+        except Exception as e:
+            st.error(f"Voice generation failed: {e}")
+            st.stop()
     else:
         audio = bg_audio
 
-    final_video = final_video.set_audio(audio)
+    if audio:
+        final_video = final_video.set_audio(audio)
+
     output_path = os.path.join(TEMP_DIR, "final.mp4")
     final_video.write_videofile(output_path, fps=24)
     st.video(output_path)
