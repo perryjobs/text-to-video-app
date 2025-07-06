@@ -1,9 +1,13 @@
-# streamlit_app.py (updated version with bug fix)
+# streamlit_app.py (updated with Pillow compatibility patch)
 import streamlit as st
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
 import requests, os, io, textwrap, tempfile
 from gtts import gTTS
+
+# 🩺 Monkey patch for Pillow >= 10 compatibility
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
 
 DEFAULT_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 SAMPLE_MUSIC_DIR = "sample_music"
