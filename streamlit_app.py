@@ -1,5 +1,5 @@
 import streamlit as st
-from moviepy.editor import VideoFileClip, CompositeVideoClip, TextClip, concatenate_videoclips
+from moviepy.editor import VideoFileClip, CompositeVideoClip, TextClip
 from gtts import gTTS
 import os
 from PIL import Image
@@ -7,18 +7,18 @@ import tempfile
 import requests
 from io import BytesIO
 
-# Pillow compatibility patch for newer versions
+# Pillow compatibility for newer versions
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
 # Constants
 W, H = 720, 1280
 
-# Get API keys from Streamlit secrets
+# API keys from Streamlit secrets
 PEXELS_API_KEY = st.secrets["PEXELS_KEY"]
 UNSPLASH_API_KEY = st.secrets["UNSPLASH_KEY"]
 
-# UI
+# Streamlit UI
 st.title("Text-to-Video Generator")
 
 text_input = st.text_area("Enter script/text for video:")
@@ -26,7 +26,6 @@ text_input = st.text_area("Enter script/text for video:")
 bg_choice = st.radio("Background type", ["Upload", "Pexels", "Unsplash"], horizontal=True)
 voiceover = st.checkbox("Add voiceover from text")
 
-# Video background handler
 vid_file = None
 
 if bg_choice == "Upload":
@@ -37,7 +36,7 @@ elif bg_choice == "Pexels":
     if query:
         headers = {"Authorization": PEXELS_API_KEY}
         res = requests.get(f"https://api.pexels.com/videos/search?query={query}&per_page=1", headers=headers)
-        if res.ok and res.json()["videos"]:
+        if res.ok and res.json().get("videos"):
             url = res.json()["videos"][0]["video_files"][0]["link"]
             vid_file = BytesIO(requests.get(url).content)
         else:
@@ -57,7 +56,6 @@ elif bg_choice == "Unsplash":
         else:
             st.warning("No image found on Unsplash.")
 
-# Video generation
 if st.button("Generate Video") and text_input and vid_file:
     try:
         tmp_dir = tempfile.mkdtemp()
@@ -74,10 +72,11 @@ if st.button("Generate Video") and text_input and vid_file:
             with open(vid_path, "wb") as f:
                 f.write(vid_file.read())
 
-        # Load video clip
-        base_vid = VideoFileClip(vid_path).resize(height=H if base_vid.size[1] > base_vid.size[0] else W).without_audio()
+        # Load video and resize based on orientation
+        clip = VideoFileClip(vid_path).without_audio()
+        base_vid = clip.resize(height=H if clip.size[1] > clip.size[0] else W)
 
-        # Text overlay
+        # Add text overlay
         text_clip = TextClip(text_input, fontsize=40, color='white', size=base_vid.size, method='caption', align='center', font='Arial')
         text_clip = text_clip.set_duration(base_vid.duration).set_position('center')
 
@@ -88,6 +87,7 @@ if st.button("Generate Video") and text_input and vid_file:
             tts.save(audio_path)
             base_vid = base_vid.set_audio(audio_path)
 
+        # Combine clips
         final = CompositeVideoClip([base_vid, text_clip])
         output_path = os.path.join(tmp_dir, "final.mp4")
         final.write_videofile(output_path, fps=24, codec="libx264")
