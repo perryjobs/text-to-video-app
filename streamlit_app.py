@@ -229,10 +229,15 @@ if st.button("🎬 Generate Video"):
     final_video = concatenate_videoclips(clips, method="compose", padding=-1, transition=clips[0].crossfadein(1)) if len(clips) > 1 else clips[0]
 
    # --------------------------- AUDIO ---------------------------
+# Combine all video clips (after building `clips`)
+final_video = concatenate_videoclips(clips, method="compose", padding=-1, transition=clips[0].crossfadein(1)) if len(clips) > 1 else clips[0]
+
+# Add background music
 bg_music = AudioFileClip(music_path).volumex(0.3).set_duration(final_video.duration)
 
+# AI voice-over (optional)
 if voiceover:
-    with st.spinner("Generating voice‑over…"):
+    with st.spinner("Generating voice-over..."):
         tts_text = " ".join(quotes)
         tts_path = os.path.join(TEMP_DIR, "voice.mp3")
         gTTS(tts_text, lang=voice_lang).save(tts_path)
@@ -243,4 +248,6 @@ if voiceover:
 else:
     final_audio = bg_music
 
+# Add audio to video
 final_video = final_video.set_audio(final_audio)
+
