@@ -22,8 +22,8 @@ text_input = st.text_area("Enter your message:", "Your text here")
 
 # Mode selection
 vid_mode = st.sidebar.radio("Video Source", ["Upload", "Pexels", "Unsplash"])
-vid_file = None
-vid_path = None  # Ensure vid_path is always defined
+num_clips = st.sidebar.slider("Number of Clips", min_value=1, max_value=5, value=3)
+clips = []
 
 # Handle video upload
 if vid_mode == "Upload":
@@ -34,6 +34,16 @@ if vid_mode == "Upload":
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_vid:
         tmp_vid.write(vid_file.read())
         vid_path = tmp_vid.name
+
+# Combine clips with dissolve transition
+def combine_with_dissolve(clips, duration=1):
+    combined = clips[0]
+    for clip in clips[1:]:
+        combined = concatenate_videoclips([
+            combined.crossfadeout(duration),
+            clip.crossfadein(duration)
+        ], method="compose")
+    return combined
 
 # Handle Pexels API
 elif vid_mode == "Pexels":
