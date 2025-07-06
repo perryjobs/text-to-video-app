@@ -1,4 +1,14 @@
 import streamlit as st
+import tempfile
+import requests
+from PIL import Image, ImageDraw, ImageFont
+from io import BytesIO
+import numpy as np
+import os
+
+# Ensure ffmpeg is available for moviepy
+os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
+
 from moviepy.editor import (
     VideoFileClip,
     concatenate_videoclips,
@@ -7,32 +17,27 @@ from moviepy.editor import (
     crossfadein,
     crossfadeout
 )
-from PIL import Image, ImageDraw, ImageFont
-import tempfile
-import requests
-import os
-from io import BytesIO
-import numpy as np
 
+# --- Streamlit UI ---
 st.set_page_config(page_title="Text-to-Video App")
 st.title("🎬 Text-to-Video Generator")
 
 # Constants
 W, H = 720, 1280
 
-# Get API keys from secrets
+# API Keys from secrets
 PEXELS_KEY = st.secrets["PEXELS_KEY"]
 UNSPLASH_KEY = st.secrets["UNSPLASH_KEY"]
 
-# Text input
+# Input: Text to overlay
 text_input = st.text_area("Enter your message:", "Your text here")
 
-# Mode selection
+# Select mode
 vid_mode = st.sidebar.radio("Video Source", ["Upload", "Pexels", "Unsplash"])
 num_clips = st.sidebar.slider("Number of Clips", min_value=1, max_value=5, value=3)
 clips = []
 
-# Combine clips with dissolve transition
+# Dissolve transition function
 def combine_with_dissolve(clips, duration=1):
     combined = clips[0]
     for clip in clips[1:]:
@@ -42,12 +47,15 @@ def combine_with_dissolve(clips, duration=1):
         ], method="compose")
     return combined
 
-# Handle Pexels API
+# --- Fetch from Pexels ---
 if vid_mode == "Pexels":
     query = st.sidebar.text_input("Search Pexels", "nature")
     if st.sidebar.button("Get Videos"):
         headers = {"Authorization": PEXELS_KEY}
-        res = requests.get(f"https://api.pexels.com/videos/search?query={query}&per_page={num_clips}", headers=headers)
+        res = requests.get(
+            f"https://api.pexels.com/videos/search?query={query}&per_page={num_clips}",
+            headers=headers
+        )
         data = res.json()
         videos = data.get("videos", [])
         if not videos:
@@ -57,7 +65,6 @@ if vid_mode == "Pexels":
         used_urls = set()
 
         for video in videos:
-            # Sort by resolution and get best mp4
             video_files = sorted(video["video_files"], key=lambda v: v["height"], reverse=True)
             mp4_file = next((v for v in video_files if v["file_type"] == "video/mp4"), None)
             if mp4_file:
@@ -65,19 +72,22 @@ if vid_mode == "Pexels":
                 if video_url in used_urls:
                     continue
                 used_urls.add(video_url)
+
                 vid_temp = tempfile.mktemp(suffix=".mp4")
                 with open(vid_temp, "wb") as f:
                     f.write(requests.get(video_url).content)
                 clip = VideoFileClip(vid_temp).without_audio().resize(height=H)
                 clips.append(clip)
 
-# Handle Unsplash API
+# --- Fetch from Unsplash ---
 elif vid_mode == "Unsplash":
     query = st.sidebar.text_input("Search Unsplash", "landscape")
     if st.sidebar.button("Get Images"):
         for _ in range(num_clips):
-            res = requests.get(f"https://api.unsplash.com/photos/random?query={query}",
-                               headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"})
+            res = requests.get(
+                f"https://api.unsplash.com/photos/random?query={query}",
+                headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"}
+            )
             data = res.json()
             if data.get("urls"):
                 img_url = data["urls"]["regular"]
@@ -87,7 +97,7 @@ elif vid_mode == "Unsplash":
             else:
                 st.warning("One or more images could not be retrieved.")
 
-# Handle Upload
+# --- Upload multiple videos ---
 elif vid_mode == "Upload":
     uploaded_files = st.sidebar.file_uploader("Upload Videos", type=["mp4"], accept_multiple_files=True)
     if not uploaded_files:
@@ -99,12 +109,12 @@ elif vid_mode == "Upload":
             clip = VideoFileClip(tmp_vid.name).without_audio().resize(height=H)
             clips.append(clip)
 
-# Combine and render
+# --- Combine and Render ---
 if clips:
     try:
         final = combine_with_dissolve(clips, duration=1)
 
-        # Create text overlay
+        # Text Overlay
         img = Image.new("RGBA", final.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
@@ -117,6 +127,7 @@ if clips:
         text_clip = ImageClip(np.array(img)).set_duration(final.duration)
         composed = CompositeVideoClip([final, text_clip])
 
+        # Output
         out_path = tempfile.mktemp(suffix=".mp4")
         composed.write_videofile(out_path, fps=24)
 
