@@ -22,6 +22,7 @@ text_input = st.text_area("Enter your message:", "Your text here")
 # Mode selection
 vid_mode = st.sidebar.radio("Video Source", ["Upload", "Pexels", "Unsplash"])
 vid_file = None
+vid_path = None  # Ensure vid_path is always defined
 
 # Handle video upload
 if vid_mode == "Upload":
@@ -66,28 +67,33 @@ elif vid_mode == "Unsplash":
             st.stop()
 
 # Process video and overlay text
-try:
-    clip = VideoFileClip(vid_path).without_audio()
-    base_vid = clip.resize(height=H if clip.size[1] > clip.size[0] else W)
+if vid_path:
+    try:
+        clip = VideoFileClip(vid_path).without_audio()
+        base_vid = clip.resize(height=H if clip.size[1] > clip.size[0] else W)
 
-    # Create text image with PIL
-    img = Image.new("RGBA", base_vid.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
-    text_w, text_h = draw.textsize(text_input, font=font)
-    text_position = ((base_vid.size[0] - text_w) // 2, (base_vid.size[1] - text_h) // 2)
-    draw.text(text_position, text_input, font=font, fill=(255, 255, 255, 255))
+        # Create text image with PIL
+        img = Image.new("RGBA", base_vid.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+        bbox = draw.textbbox((0, 0), text_input, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        text_position = ((base_vid.size[0] - text_w) // 2, (base_vid.size[1] - text_h) // 2)
+        draw.text(text_position, text_input, font=font, fill=(255, 255, 255, 255))
 
-    text_clip = ImageClip(img).set_duration(base_vid.duration)
-    final = CompositeVideoClip([base_vid, text_clip])
+        text_clip = ImageClip(img).set_duration(base_vid.duration)
+        final = CompositeVideoClip([base_vid, text_clip])
 
-    # Save to temp file
-    out_path = tempfile.mktemp(suffix=".mp4")
-    final.write_videofile(out_path, fps=24)
+        # Save to temp file
+        out_path = tempfile.mktemp(suffix=".mp4")
+        final.write_videofile(out_path, fps=24)
 
-    st.video(out_path)
-    with open(out_path, "rb") as f:
-        st.download_button("Download Video", f, file_name="final_video.mp4")
+        st.video(out_path)
+        with open(out_path, "rb") as f:
+            st.download_button("Download Video", f, file_name="final_video.mp4")
 
-except Exception as e:
-    st.error(f"Failed to generate video: {e}")
+    except Exception as e:
+        st.error(f"Failed to generate video: {e}")
+else:
+    st.info("Please select a video or image to begin.")
