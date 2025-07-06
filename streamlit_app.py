@@ -1,98 +1,93 @@
 import streamlit as st
-from moviepy.editor import VideoFileClip, CompositeVideoClip, TextClip
-from gtts import gTTS
-import os
-from PIL import Image
+from moviepy.editor import VideoFileClip, concatenate_videoclips, ImageClip, CompositeVideoClip
+from PIL import Image, ImageDraw, ImageFont
 import tempfile
 import requests
+import os
 from io import BytesIO
 
-# Pillow compatibility for newer versions
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.Resampling.LANCZOS
+st.set_page_config(page_title="Text-to-Video App")
+st.title("🎬 Text-to-Video Generator")
 
 # Constants
 W, H = 720, 1280
 
-# API keys from Streamlit secrets
-PEXELS_API_KEY = st.secrets["PEXELS_KEY"]
-UNSPLASH_API_KEY = st.secrets["UNSPLASH_KEY"]
+# Get API keys from secrets
+PEXELS_KEY = st.secrets["PEXELS_KEY"]
+UNSPLASH_KEY = st.secrets["UNSPLASH_KEY"]
 
-# Streamlit UI
-st.title("Text-to-Video Generator")
+# Text input
+text_input = st.text_area("Enter your message:", "Your text here")
 
-text_input = st.text_area("Enter script/text for video:")
-
-bg_choice = st.radio("Background type", ["Upload", "Pexels", "Unsplash"], horizontal=True)
-voiceover = st.checkbox("Add voiceover from text")
-
+# Mode selection
+vid_mode = st.sidebar.radio("Video Source", ["Upload", "Pexels", "Unsplash"])
 vid_file = None
 
-if bg_choice == "Upload":
-    vid_file = st.file_uploader("Upload a video file", type=["mp4"])
+# Handle video upload
+if vid_mode == "Upload":
+    vid_file = st.sidebar.file_uploader("Upload Video", type=["mp4"])
+    if not vid_file:
+        st.warning("Please upload a video.")
+        st.stop()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_vid:
+        tmp_vid.write(vid_file.read())
+        vid_path = tmp_vid.name
 
-elif bg_choice == "Pexels":
-    query = st.text_input("Search video on Pexels")
-    if query:
-        headers = {"Authorization": PEXELS_API_KEY}
+# Handle Pexels API
+elif vid_mode == "Pexels":
+    query = st.sidebar.text_input("Search Pexels", "nature")
+    if st.sidebar.button("Get Video"):
+        headers = {"Authorization": PEXELS_KEY}
         res = requests.get(f"https://api.pexels.com/videos/search?query={query}&per_page=1", headers=headers)
-        if res.ok and res.json().get("videos"):
-            url = res.json()["videos"][0]["video_files"][0]["link"]
-            vid_file = BytesIO(requests.get(url).content)
-        else:
-            st.warning("No video found on Pexels.")
-
-elif bg_choice == "Unsplash":
-    query = st.text_input("Search image on Unsplash")
-    if query:
-        headers = {"Authorization": f"Client-ID {UNSPLASH_API_KEY}"}
-        res = requests.get(f"https://api.unsplash.com/photos/random?query={query}&orientation=portrait", headers=headers)
-        if res.ok:
-            url = res.json()["urls"]["regular"]
-            img = Image.open(BytesIO(requests.get(url).content)).resize((W, H))
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-            img.save(tmp.name)
-            vid_file = tmp.name
-        else:
-            st.warning("No image found on Unsplash.")
-
-if st.button("Generate Video") and text_input and vid_file:
-    try:
-        tmp_dir = tempfile.mkdtemp()
-
-        if isinstance(vid_file, BytesIO):
-            temp_vid_path = os.path.join(tmp_dir, "temp.mp4")
-            with open(temp_vid_path, "wb") as f:
-                f.write(vid_file.read())
-            vid_path = temp_vid_path
-        elif isinstance(vid_file, str):
-            vid_path = vid_file
-        else:
-            vid_path = os.path.join(tmp_dir, vid_file.name)
+        data = res.json()
+        if data.get("videos"):
+            video_url = data["videos"][0]["video_files"][0]["link"]
+            vid_path = tempfile.mktemp(suffix=".mp4")
             with open(vid_path, "wb") as f:
-                f.write(vid_file.read())
+                f.write(requests.get(video_url).content)
+        else:
+            st.error("No video found.")
+            st.stop()
 
-        # Load video and resize based on orientation
-        clip = VideoFileClip(vid_path).without_audio()
-        base_vid = clip.resize(height=H if clip.size[1] > clip.size[0] else W)
+# Handle Unsplash fallback (image only)
+elif vid_mode == "Unsplash":
+    query = st.sidebar.text_input("Search Unsplash", "landscape")
+    if st.sidebar.button("Get Image"):
+        res = requests.get(f"https://api.unsplash.com/photos/random?query={query}", headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"})
+        data = res.json()
+        if data.get("urls"):
+            img_url = data["urls"]["regular"]
+            image = Image.open(BytesIO(requests.get(img_url).content)).resize((W, H))
+            img_clip = ImageClip(image).set_duration(5)
+            vid_path = tempfile.mktemp(suffix=".mp4")
+            img_clip.write_videofile(vid_path, fps=24)
+        else:
+            st.error("No image found.")
+            st.stop()
 
-        # Add text overlay
-        text_clip = TextClip(text_input, fontsize=40, color='white', size=base_vid.size, method='caption', align='center', font='Arial')
-        text_clip = text_clip.set_duration(base_vid.duration).set_position('center')
+# Process video and overlay text
+try:
+    clip = VideoFileClip(vid_path).without_audio()
+    base_vid = clip.resize(height=H if clip.size[1] > clip.size[0] else W)
 
-        # Voiceover (optional)
-        if voiceover:
-            tts = gTTS(text=text_input)
-            audio_path = os.path.join(tmp_dir, "voice.mp3")
-            tts.save(audio_path)
-            base_vid = base_vid.set_audio(audio_path)
+    # Create text image with PIL
+    img = Image.new("RGBA", base_vid.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+    text_w, text_h = draw.textsize(text_input, font=font)
+    text_position = ((base_vid.size[0] - text_w) // 2, (base_vid.size[1] - text_h) // 2)
+    draw.text(text_position, text_input, font=font, fill=(255, 255, 255, 255))
 
-        # Combine clips
-        final = CompositeVideoClip([base_vid, text_clip])
-        output_path = os.path.join(tmp_dir, "final.mp4")
-        final.write_videofile(output_path, fps=24, codec="libx264")
+    text_clip = ImageClip(img).set_duration(base_vid.duration)
+    final = CompositeVideoClip([base_vid, text_clip])
 
-        st.video(output_path)
+    # Save to temp file
+    out_path = tempfile.mktemp(suffix=".mp4")
+    final.write_videofile(out_path, fps=24)
 
-    except Exception as e:
-        st.error(f"Failed to generate video: {e}")
+    st.video(out_path)
+    with open(out_path, "rb") as f:
+        st.download_button("Download Video", f, file_name="final_video.mp4")
+
+except Exception as e:
+    st.error(f"Failed to generate video: {e}")
