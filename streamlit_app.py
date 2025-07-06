@@ -229,4 +229,5 @@ if st.button("🎬 Generate Video"):
     final_video = concatenate_videoclips(clips, method="compose", padding=-1, transition=clips[0].crossfadein(1)) if len(clips) > 1 else clips[0]
 
     # --------------------------- AUDIO ---------------------------
-    bg_music = AudioFileClip(music_path).volumex(0.3).\
+    bg_music = AudioFileClip(music_path).volumex(0.3).set_duration(final_video.duration)
+
