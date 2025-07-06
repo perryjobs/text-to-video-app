@@ -228,6 +228,19 @@ if st.button("🎬 Generate Video"):
 
     final_video = concatenate_videoclips(clips, method="compose", padding=-1, transition=clips[0].crossfadein(1)) if len(clips) > 1 else clips[0]
 
-    # --------------------------- AUDIO ---------------------------
-    bg_music = AudioFileClip(music_path).volumex(0.3).set_duration(final_video.duration)
+   # --------------------------- AUDIO ---------------------------
+bg_music = AudioFileClip(music_path).volumex(0.3).set_duration(final_video.duration)
 
+if voiceover:
+    with st.spinner("Generating voice‑over…"):
+        tts_text = " ".join(quotes)
+        tts_path = os.path.join(TEMP_DIR, "voice.mp3")
+        gTTS(tts_text, lang=voice_lang).save(tts_path)
+        voice_clip = AudioFileClip(tts_path)
+        if voice_clip.duration < final_video.duration:
+            voice_clip = voice_clip.audio_loop(duration=final_video.duration)
+    final_audio = CompositeAudioClip([bg_music, voice_clip])
+else:
+    final_audio = bg_music
+
+final_video = final_video.set_audio(final_audio)
