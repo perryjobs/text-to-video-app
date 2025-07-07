@@ -145,7 +145,12 @@ if st.button("Generate Video"):
                 img = Image.open(file).resize((W, H))
                 if img.mode == "RGBA":
                     img = img.convert("RGB")
-                bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur).resize((W, H)))
+                bg_clips.append(
+                    ImageClip(np.array(img))
+                    .set_duration(quote_dur)
+                    .resize((W, H))
+                    .on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
+                )
         else:
             for _ in range(num_imgs):
                 content = fetch_unsplash(kw)
@@ -153,7 +158,12 @@ if st.button("Generate Video"):
                     img = Image.open(io.BytesIO(content)).resize((W, H))
                     if img.mode == "RGBA":
                         img = img.convert("RGB")
-                    bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur).resize((W, H)))
+                    bg_clips.append(
+                        ImageClip(np.array(img))
+                        .set_duration(quote_dur)
+                        .resize((W, H))
+                        .on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
+                    )
     else:
         if vid_src == "Upload":
             if not vid_files:
@@ -163,7 +173,7 @@ if st.button("Generate Video"):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                     tmp.write(file.read())
                     tmp.flush()
-                    clip = VideoFileClip(tmp.name).subclip(0, quote_dur).resize((W, H)).on_color(size=(W, H))
+                    clip = VideoFileClip(tmp.name).subclip(0, quote_dur).resize((W, H)).on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
                     bg_clips.append(clip)
         else:
             for i in range(num_vids):
@@ -172,7 +182,7 @@ if st.button("Generate Video"):
                     vid_path = os.path.join(TEMP_DIR, f"pexels_{i}.mp4")
                     with open(vid_path, "wb") as f:
                         f.write(requests.get(url).content)
-                    clip = VideoFileClip(vid_path).subclip(0, quote_dur).resize((W, H)).on_color(size=(W, H))
+                    clip = VideoFileClip(vid_path).subclip(0, quote_dur).resize((W, H)).on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
                     bg_clips.append(clip)
 
     if not bg_clips:
@@ -180,7 +190,7 @@ if st.button("Generate Video"):
         st.stop()
 
     for i, q in enumerate(quotes):
-        bg = bg_clips[i % len(bg_clips)].set_position("center").set_duration(quote_dur)
+        bg = bg_clips[i % len(bg_clips)].set_duration(quote_dur)
         txt_clip = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
         comp = CompositeVideoClip([bg, txt_clip], size=(W, H))
         clips.append(comp)
