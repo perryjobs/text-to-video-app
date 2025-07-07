@@ -1,69 +1,124 @@
+# streamlit_app.py (v6 – Vertical 1080x1920, Fixed Preview, Working Video+Text)
 import streamlit as st
 from moviepy.editor import *
-from PIL import Image, ImageDraw, ImageFont
-import numpy as np
-import tempfile
-import os
+from PIL import Image, ImageDraw, ImageFont, __version__ as PILLOW_VERSION
+import requests, os, io, textwrap, tempfile, numpy as np, base64
+from gtts import gTTS
 
-# Final resolution
-W, H = 1080, 1920
+# --- Constants ---
+W, H = 1080, 1920  # Final video resolution
+PREVIEW_W, PREVIEW_H = 360, 640  # Scaled preview size
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+SAMPLE_MUSIC_DIR = "sample_music"
 TEMP_DIR = tempfile.mkdtemp()
+UNSPLASH_KEY = st.secrets.get("UNSPLASH_KEY", "")
+PEXELS_KEY = st.secrets.get("PEXELS_KEY", "")
 
-st.set_page_config(layout="wide")
-st.title("🛠️ Fixing Black Screen – Transparent Text on Video")
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
 
-uploaded_video = st.file_uploader("Upload vertical MP4 video (9:16)", type=["mp4"])
-quote_text = st.text_input("Enter quote", "Believe in yourself.")
+def wrap_lines(text, draw, font, max_w):
+    words, line, lines = text.split(), "", []
+    for w in words:
+        if draw.textlength(f"{line} {w}", font=font) <= max_w:
+            line += f" {w}" if line else w
+        else:
+            lines.append(line); line = w
+    if line: lines.append(line)
+    return lines
 
-if st.button("Generate"):
-    if not uploaded_video:
-        st.error("Please upload a video.")
+def typewriter_clip(size, text, font, color, duration):
+    chars = list(text)
+    def make_frame(t):
+        img = Image.new("RGBA", size, (0,0,0,0))
+        draw = ImageDraw.Draw(img)
+        n_chars = min(int(len(chars) * t / duration), len(chars))
+        partial = ''.join(chars[:n_chars])
+        lines = wrap_lines(partial, draw, font, size[0]-80)
+        y = (size[1] - len(lines)*(font.size+10)) // 2
+        for line in lines:
+            w = draw.textlength(line, font=font)
+            draw.text(((size[0]-w)//2, y), line, font=font, fill=color)
+            y += font.size+10
+        return np.array(img.convert("RGB"))
+    return VideoClip(make_frame=make_frame, duration=duration)
+
+def static_text_clip(size, text, font, color, duration):
+    img = Image.new("RGBA", size, (0,0,0,0))
+    draw = ImageDraw.Draw(img)
+    lines = wrap_lines(text, draw, font, size[0]-80)
+    y = (size[1] - len(lines)*(font.size+10)) // 2
+    for line in lines:
+        w = draw.textlength(line, font=font)
+        draw.text(((size[0]-w)//2, y), line, font=font, fill=color)
+        y += font.size+10
+    return ImageClip(np.array(img.convert("RGB"))).set_duration(duration)
+
+# --- Streamlit UI ---
+st.set_page_config("Quote Video Maker", layout="wide")
+st.title("🎞️ Quote Video Maker – Animated & Merged")
+
+st.sidebar.header("Settings")
+vid_file = st.sidebar.file_uploader("Upload a video background", type=["mp4"])
+font_size = st.sidebar.slider("Font size", 40, 120, 80)
+text_color = st.sidebar.color_picker("Text color", "#FFFFFF")
+quote_dur = st.sidebar.slider("Seconds per quote", 3, 15, 6)
+text_anim = st.sidebar.selectbox("Text animation", ["Static", "Typewriter"])
+voiceover = st.sidebar.checkbox("Add Voiceover (gTTS)")
+voice_lang = st.sidebar.selectbox("Voice Language", ["en", "es", "fr"], disabled=not voiceover)
+
+quotes_raw = st.text_area("Enter quotes (separate each with a blank line)", height=300)
+
+if st.button("Generate Video"):
+    quotes = [q.strip() for q in quotes_raw.split("\n\n") if q.strip()]
+    if not quotes:
+        st.error("Please enter at least one quote.")
         st.stop()
 
-    # Save video
-    video_path = os.path.join(TEMP_DIR, "input.mp4")
-    with open(video_path, "wb") as f:
-        f.write(uploaded_video.read())
+    if not vid_file:
+        st.error("Please upload a video background.")
+        st.stop()
 
-    # Load video
-    bg_clip = VideoFileClip(video_path).resize((W, H)).subclip(0, 6)
+    tmp_path = os.path.join(TEMP_DIR, "bg.mp4")
+    with open(tmp_path, "wb") as f:
+        f.write(vid_file.read())
 
-    # Transparent image for text overlay
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 90)
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype(FONT_PATH, font_size)
+    bg_video = VideoFileClip(tmp_path).without_audio().resize((W, H))
+    clips = []
 
-    # Centered text
-    lines = quote_text.split("\n")
-    total_height = sum([draw.textbbox((0, 0), line, font=font)[3] for line in lines])
-    y = (H - total_height) // 2
-    for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        draw.text(((W - w) // 2, y), line, font=font, fill=(255, 255, 255, 255))
-        y += h + 10
+    for i, quote in enumerate(quotes):
+        bg = bg_video.subclip(0, quote_dur)
+        txt = typewriter_clip((W,H), quote, font, text_color, quote_dur) if text_anim == "Typewriter" else static_text_clip((W,H), quote, font, text_color, quote_dur)
+        comp = CompositeVideoClip([bg, txt.set_position("center")], size=(W,H)).set_duration(quote_dur)
+        clips.append(comp)
 
-    # Convert to clip
-    txt_clip = (ImageClip(np.array(img), ismask=False)
-                .set_duration(bg_clip.duration)
-                .set_position("center"))
+    final = concatenate_videoclips(clips, method="compose")
 
-    # Combine
-    final = CompositeVideoClip([bg_clip, txt_clip])
+    # Add voiceover if selected
+    if voiceover:
+        tts_path = os.path.join(TEMP_DIR, "voice.mp3")
+        gTTS(" ".join(quotes), lang=voice_lang).save(tts_path)
+        voice_clip = AudioFileClip(tts_path)
+        if voice_clip.duration < final.duration:
+            voice_clip = voice_clip.audio_loop(duration=final.duration)
+        final = final.set_audio(voice_clip)
 
-    # Export
-    output_path = os.path.join(TEMP_DIR, "output.mp4")
-    final.write_videofile(output_path, fps=24, preset="ultrafast")
-    st.success("✅ Done!")
-    st.video(out, format="video/mp4", start_time=0)
+    out_path = os.path.join(TEMP_DIR, "final.mp4")
+    final.write_videofile(out_path, fps=24, preset="ultrafast")
+
+    st.success("Done! Preview below ⬇️")
+
+    # --- Custom Scaled Video Preview ---
+    with open(out_path, "rb") as f:
+        video_bytes = f.read()
+    b64_video = base64.b64encode(video_bytes).decode()
     st.markdown(
-    f"""
-    <video width="360" height="640" controls autoplay loop muted>
-        <source src="data:video/mp4;base64,{base64.b64encode(open(out, 'rb').read()).decode()}" type="video/mp4">
-    </video>
-    """,
-    unsafe_allow_html=True
-)
-
-    st.download_button("Download", open(output_path, "rb"), "quote_video.mp4")
+        f"""
+        <video width="{PREVIEW_W}" height="{PREVIEW_H}" controls autoplay muted loop>
+            <source src="data:video/mp4;base64,{b64_video}" type="video/mp4">
+        </video>
+        """,
+        unsafe_allow_html=True
+    )
+    st.download_button("Download Video", data=video_bytes, file_name="quote_video.mp4")
