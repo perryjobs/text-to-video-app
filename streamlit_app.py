@@ -104,22 +104,25 @@ if st.button("Generate Video"):
             voice_clip = voice_clip.audio_loop(duration=final.duration)
         final = final.set_audio(voice_clip)
 
-    out_path = os.path.join(TEMP_DIR, "final.mp4")
-    final.write_videofile(out_path, fps=24, preset="ultrafast")
+    # --- Export Final Video ---
+out = os.path.join(TEMP_DIR, "final.mp4")
+video.write_videofile(out, fps=24, preset="ultrafast")
 
-    st.success("Done! Preview below ⬇️")
+st.success("Done!")
 
-    # --- Custom Scaled Video Preview ---
-    with open(out_path, "rb") as f:
-        video_bytes = f.read()
-    b64_video = base64.b64encode(video_bytes).decode()
-    st.markdown(
+# Custom-sized video preview
+import base64
+video_bytes = open(out, "rb").read()
+encoded_video = base64.b64encode(video_bytes).decode()
+
+st.markdown(
     f"""
     <video controls style="width: 360px; height: 640px; border-radius: 12px;">
-        <source src="data:video/mp4;base64,{base64.b64encode(open(out, 'rb').read()).decode()}" type="video/mp4">
+        <source src="data:video/mp4;base64,{encoded_video}" type="video/mp4">
         Your browser does not support the video tag.
     </video>
     """,
     unsafe_allow_html=True,
 )
-    st.download_button("Download Video", data=video_bytes, file_name="quote_video.mp4")
+
+st.download_button("Download", video_bytes, "video.mp4")
