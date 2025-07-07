@@ -156,9 +156,11 @@ if st.button("Generate Video"):
         clips.append(comp)
 
     # add dissolve transition
-    video=concatenate_videoclips(clips, method="compose",
-                                 padding=-trans_dur,
-                                 transition=clips[0].crossfadein(trans_dur))
+    video = clips[0] if len(clips) == 1 else concatenate_videoclips(
+        clips,
+        method="compose",
+        padding=-trans_dur,
+        transition=clips[0].crossfadein(trans_dur)))
 
     # handle audio
     if music_mode=="Upload" and music_file:
