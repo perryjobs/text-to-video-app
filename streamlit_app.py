@@ -126,50 +126,15 @@ if st.button("Generate Video"):
         st.error("Provide at least one quote."); st.stop()
     font=ImageFont.truetype(FONT_PATH,font_size)
     bg_clips=[]
-
-    if media_type=="Image":
-        imgs_bytes=[]
-        if img_src=="Upload":
-            if not img_files:
-                st.error("Upload images."); st.stop()
-            imgs_bytes=[f.read() for f in img_files]
-        else:
-            for _ in range(num_imgs):
-                img=fetch_unsplash(kw)
-                if img: imgs_bytes.append(img)
-        if not imgs_bytes: st.error("No images fetched."); st.stop()
-        for b in imgs_bytes:
-            img=Image.open(io.BytesIO(b)).convert("RGB").resize((W,H),Image.Resampling.LANCZOS)
-            path=os.path.join(TEMP_DIR,f"bg_{hash(b)}.png"); img.save(path)
-            bg_clips.append(ImageClip(path).set_duration(quote_dur))
-    else:
-        vids=[]
-        if vid_src=="Upload":
-            if not vid_files: st.error("Upload videos."); st.stop()
-            vids=[f for f in vid_files]
-        else:
-            for _ in range(num_vids):
-                url=fetch_pexels_video(kw)
-                if url:
-                    fname=os.path.join(TEMP_DIR,f"pex_{hash(url)}.mp4")
-                    with open(fname,"wb") as fp: fp.write(requests.get(url).content)
-                    vids.append(fname)
-        if not vids: st.error("No videos found."); st.stop()
-        for v in vids:
-            path=v if isinstance(v,str) else os.path.join(TEMP_DIR,v.name)
-            if not isinstance(v,str):
-                with open(path,"wb") as fp: fp.write(v.read())
-            bg_clip = VideoFileClip(path).subclip(0, quote_dur).without_audio()
-            bg_clips.append(bg_clip.on_color(size=(W, H), color=(0, 0, 0), col_opacity=1, pos=("center","center")))
-
-    clips=[]
     for i,q in enumerate(quotes):
         bg=bg_clips[i % len(bg_clips)].copy()
         txt_clip=animated_text_clip((W,H), q, font, text_color, text_anim, quote_dur)
-        comp=CompositeVideoClip([bg,txt_clip.set_position("center")])
+        comp=CompositeVideoClip([bg,txt_clip])
+        if i>0:
+            comp = comp.crossfadein(trans_dur)
         clips.append(comp)
 
-    if len(clips) == 1:
+    video = concatenate_videoclips(clips, method="compose")
         video = clips[0]
     else:
         timeline = []
@@ -181,7 +146,7 @@ if st.button("Generate Video"):
                 timeline.append(c.set_start(current_start).crossfadein(trans_dur))
             current_start += quote_dur - trans_dur
         video = concatenate_videoclips(clips, method="compose", padding=-trans_dur, transition=clips[0].crossfadein(trans_dur))
-        
+        )
 
     if music_mode=="Upload" and music_file:
         mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
