@@ -155,13 +155,13 @@ if st.button("Generate Video"):
                 st.stop()
             for file in img_files:
                 img = Image.open(file).resize((W, H))
-                bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
+                bg_clips.append(safe_imageclip(img, duration))
         else:  # Unsplash
             for _ in range(num_imgs):
                 content = fetch_unsplash(kw)
                 if content:
                     img = Image.open(io.BytesIO(content)).resize((W, H))
-                    bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
+                    bg_clips.append(safe_imageclip(img, duration))
     else:  # Video
         if vid_src == "Upload":
             if not vid_files:
