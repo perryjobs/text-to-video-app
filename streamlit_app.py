@@ -164,7 +164,7 @@ if st.button("Generate Video"):
             method="compose",
             padding=-trans_dur,
             transition=clips[0].crossfadein(trans_dur)
-        )))
+        )
 
     # handle audio
     if music_mode=="Upload" and music_file:
