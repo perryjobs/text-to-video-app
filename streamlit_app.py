@@ -1,4 +1,4 @@
-# streamlit_app.py (finalized version)
+# streamlit_app.py (fixed Unsplash and Pexels issues)
 import streamlit as st
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
@@ -71,14 +71,20 @@ fmt = st.sidebar.selectbox("Format", ["Vertical (720x1280)", "Square (720x720)"]
 W, H = (720, 1280) if fmt.startswith("Vertical") else (720, 720)
 
 # Background Input
+bg_file = None
 if media_type == "Image":
     bg_mode = st.sidebar.radio("Image Source", ["Upload", "Unsplash"], horizontal=True)
-    bg_file = st.sidebar.file_uploader("Upload Image" if bg_mode == "Upload" else None, type=["jpg", "jpeg", "png"])
-    unsplash_kw = st.sidebar.text_input("Unsplash keyword", "sunrise") if bg_mode == "Unsplash" else ""
-else:
+    if bg_mode == "Upload":
+        bg_file = st.sidebar.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
+    else:
+        unsplash_kw = st.sidebar.text_input("Unsplash keyword", "sunrise")
+
+if media_type == "Video":
     vid_mode = st.sidebar.radio("Video Source", ["Upload", "Pexels"], horizontal=True)
-    vid_file = st.sidebar.file_uploader("Upload Video" if vid_mode == "Upload" else None, type=["mp4"])
-    pexels_kw = st.sidebar.text_input("Pexels keyword", "nature") if vid_mode == "Pexels" else ""
+    if vid_mode == "Upload":
+        vid_file = st.sidebar.file_uploader("Upload Video", type=["mp4"])
+    else:
+        pexels_kw = st.sidebar.text_input("Pexels keyword", "nature")
 
 music_mode = st.sidebar.radio("Music", ["Upload", "Sample"], horizontal=True)
 music_file = st.sidebar.file_uploader("Upload MP3" if music_mode == "Upload" else None, type=["mp3"])
