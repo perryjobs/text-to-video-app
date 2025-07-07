@@ -135,7 +135,7 @@ if st.button("Generate Video"):
         clips.append(comp)
 
     if len(clips) == 1:
-    video = clips[0]
+        video = clips[0]
     else:
         timeline = []
         current_start = 0
