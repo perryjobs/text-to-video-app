@@ -30,7 +30,8 @@ if st.button("Generate"):
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
         img = Image.new("RGB", (W, H), color=(0, 0, 0))
         draw = ImageDraw.Draw(img)
-        w, h = draw.textsize(text_input, font=font)
+        bbox = draw.textbbox((0, 0), text_input, font=font)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         draw.text(((W - w) // 2, (H - h) // 2), text_input, font=font, fill="white")
 
         text_clip = ImageClip(np.array(img)).set_duration(bg_clip.duration)
