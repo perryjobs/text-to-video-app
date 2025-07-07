@@ -174,7 +174,16 @@ if st.button("Generate Video"):
             if not isinstance(v, str):
                 with open(path, "wb") as fp:
                     fp.write(v.read())
-            bg_clips.append(VideoFileClip(path).subclip(0, quote_dur).resize((W, H)).without_audio())
+            bg_clip = VideoFileClip(path).subclip(0, quote_dur).without_audio()
+bg_clips.append(
+    bg_clip.on_color(
+        size=(W, H),
+        color=(0, 0, 0),
+        col_opacity=1,
+        pos=("center", "center")
+    )
+)
+
 
     # Now create clips with text overlay
     clips = []
