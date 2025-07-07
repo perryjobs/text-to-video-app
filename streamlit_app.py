@@ -114,11 +114,12 @@ if st.button("Generate Video"):
         video_bytes = f.read()
     b64_video = base64.b64encode(video_bytes).decode()
     st.markdown(
-        f"""
-        <video width="{PREVIEW_W}" height="{PREVIEW_H}" controls autoplay muted loop>
-            <source src="data:video/mp4;base64,{b64_video}" type="video/mp4">
-        </video>
-        """,
-        unsafe_allow_html=True
-    )
+    f"""
+    <video controls style="width: 360px; height: 640px; border-radius: 12px;">
+        <source src="data:video/mp4;base64,{base64.b64encode(open(out, 'rb').read()).decode()}" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    """,
+    unsafe_allow_html=True,
+)
     st.download_button("Download Video", data=video_bytes, file_name="quote_video.mp4")
