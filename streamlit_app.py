@@ -163,9 +163,9 @@ if st.button("Generate Video"):
                 content = fetch_unsplash(kw)
                 if content:
                     img = Image.open(io.BytesIO(content)).resize((W, H))
-if img.mode == "RGBA":
-    img = img.convert("RGB")
-bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
+            if img.mode == "RGBA":
+                img = img.convert("RGB")
+                bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
 
     else:  # Video
         if vid_src == "Upload":
