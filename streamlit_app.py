@@ -61,7 +61,7 @@ def text_frame(size, text, font, color):
     y = (H - len(lines)*(font.size+10))//2
     for ln in lines:
         w = draw.textlength(ln, font=font)
-        draw.text(((W-w)//2, y), ln, font=font, fill=color)
+        draw.text(((W-w)//2, y), ln, font=font, fill=(255,255,255))
         y += font.size+10
     return img.convert("RGB")
 
@@ -77,7 +77,7 @@ def typewriter_frames(size, text, font, color, duration):
         y = size[1] - len(lines)*(font.size+10) - 40
         for ln in lines:
             w = draw.textlength(ln, font=font)
-            draw.text(((size[0]-w)//2, y), ln, font=font, fill=color)
+            draw.text(((size[0]-w)//2, y), ln, font=font, fill=(255,255,255))
             y += font.size+10
         return np.array(img.convert("RGB"))
     return VideoClip(make_frame=make_frame, duration=duration).set_position(("center","bottom"))
