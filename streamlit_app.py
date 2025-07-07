@@ -1,48 +1,51 @@
-# streamlit_app.py
 import streamlit as st
-import tempfile, os
 from moviepy.editor import *
-from PIL import ImageFont, ImageDraw, Image
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+import tempfile
+import os
 
+# Set final resolution
+W, H = 1080, 1920
+TEMP_DIR = tempfile.mkdtemp()
+
+# Streamlit UI
 st.set_page_config(layout="wide")
-st.title("🎬 Fix Black Video Background")
+st.title("🎬 Video + Text Overlay Test")
 
-W, H = 1080, 1920  # 9:16 resolution
+uploaded_video = st.file_uploader("Upload a vertical MP4 video", type=["mp4"])
+quote_text = st.text_input("Enter your quote text", "You are enough.")
 
-video_file = st.file_uploader("Upload video background", type=["mp4"])
-text_input = st.text_area("Enter a quote for your video", "You are stronger than you think.")
-
-if st.button("Generate"):
-    if not video_file:
-        st.error("Please upload a video.")
+if st.button("Generate Quote Video"):
+    if not uploaded_video:
+        st.error("Please upload a video first.")
         st.stop()
 
-    # Save uploaded video to a temporary file
-    temp_video_path = os.path.join(tempfile.gettempdir(), "uploaded_bg.mp4")
-    with open(temp_video_path, "wb") as f:
-        f.write(video_file.read())
+    # Save uploaded video to temp file
+    video_path = os.path.join(TEMP_DIR, "input.mp4")
+    with open(video_path, "wb") as f:
+        f.write(uploaded_video.read())
 
-    try:
-        bg_clip = VideoFileClip(temp_video_path).resize((W, H)).subclip(0, 5).without_audio()
+    # Load video
+    clip = VideoFileClip(video_path).resize((W, H)).subclip(0, 6)
 
-        # Prepare text image
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
-        img = Image.new("RGB", (W, H), color=(0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        bbox = draw.textbbox((0, 0), text_input, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        draw.text(((W - w) // 2, (H - h) // 2), text_input, font=font, fill="white")
+    # Create text image using Pillow
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
+    img = Image.new("RGB", (W, H), color=(0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    bbox = draw.textbbox((0, 0), quote_text, font=font)
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    draw.text(((W - w) // 2, (H - h) // 2), quote_text, font=font, fill="white")
 
-        text_clip = ImageClip(np.array(img)).set_duration(bg_clip.duration)
+    # Turn it into a clip
+    txt_clip = ImageClip(np.array(img)).set_duration(clip.duration)
 
-        final = CompositeVideoClip([bg_clip, text_clip])
-        output_path = os.path.join(tempfile.gettempdir(), "final_video.mp4")
-        final.write_videofile(output_path, fps=24)
+    # Composite
+    final = CompositeVideoClip([clip, txt_clip])
 
-        st.success("Done!")
-        st.video(output_path)
-        st.download_button("Download Video", open(output_path, "rb"), file_name="quote_video.mp4")
-
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
+    # Output
+    output_path = os.path.join(TEMP_DIR, "output.mp4")
+    final.write_videofile(output_path, fps=24, preset="ultrafast")
+    st.success("✅ Video Generated!")
+    st.video(output_path)
+    st.download_button("Download", open(output_path, "rb"), "quote_video.mp4")
