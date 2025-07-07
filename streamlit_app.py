@@ -134,19 +134,19 @@ if st.button("Generate Video"):
             comp = comp.crossfadein(trans_dur)
         clips.append(comp)
 
-    video = concatenate_videoclips(clips, method="compose")
+    if len(clips) == 1:
     video = clips[0]
-    else:
-        timeline = []
-        current_start = 0
-        for idx, c in enumerate(clips):
-            if idx == 0:
-                timeline.append(c.set_start(current_start))
-            else:
-                timeline.append(c.set_start(current_start).crossfadein(trans_dur))
-            current_start += quote_dur - trans_dur
-        video = concatenate_videoclips(clips, method="compose", padding=-trans_dur, transition=clips[0].crossfadein(trans_dur))
-        
+else:
+    timeline = []
+    current_start = 0
+    for idx, c in enumerate(clips):
+        if idx == 0:
+            timeline.append(c.set_start(current_start))
+        else:
+            timeline.append(c.set_start(current_start).crossfadein(trans_dur))
+        current_start += quote_dur - trans_dur
+    video = CompositeVideoClip(timeline, size=(W,H)).set_duration(current_start + trans_dur)
+
 
     if music_mode=="Upload" and music_file:
         mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
