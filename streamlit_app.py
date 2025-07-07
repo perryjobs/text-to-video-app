@@ -144,7 +144,7 @@ if st.button("Generate Video"):
             timeline.append(c.set_start(current_start))
     else:
             timeline.append(c.set_start(current_start).crossfadein(trans_dur))
-        current_start += quote_dur - trans_dur
+            current_start += quote_dur - trans_dur
     video = CompositeVideoClip(timeline, size=(W,H)).set_duration(current_start + trans_dur)
 
 
