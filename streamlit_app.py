@@ -194,9 +194,7 @@ if st.button("Generate Video"):
     for i, q in enumerate(quotes):
         bg = bg_clips[i % len(bg_clips)].set_position("center")
         txt_clip = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
-    if background is None:
-        st.error("No background image found for this quote.")
-
+    
         comp = CompositeVideoClip(
     [bg.set_duration(quote_dur).resize((W, H)), txt_clip.set_duration(quote_dur)],
     size=(W, H)
