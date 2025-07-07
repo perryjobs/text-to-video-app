@@ -1,9 +1,13 @@
 # streamlit_app.py (v5 – Fix transitions & real typewriter)
 import streamlit as st
 from moviepy.editor import *
-from PIL import Image, ImageDraw, ImageFont
 import requests, os, io, textwrap, tempfile, numpy as np
 from gtts import gTTS
+from PIL import Image, ImageDraw, ImageFont
+
+# 🩹 Monkey patch to fix MoviePy incompatibility with Pillow >= 10
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
 
 # --- Constants ---
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
