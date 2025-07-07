@@ -1,101 +1,177 @@
+# streamlit_app.py (v5 – Fix transitions & real typewriter)
 import streamlit as st
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
-import numpy as np
-import requests
-from io import BytesIO
+import requests, os, io, textwrap, tempfile, numpy as np
 from gtts import gTTS
-import tempfile
-import os
 
-# Monkey patch for Pillow >=10 compatibility
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.Resampling.LANCZOS
+# --- Constants ---
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+SAMPLE_MUSIC_DIR = "sample_music"
+TEMP_DIR = tempfile.mkdtemp()
+UNSPLASH_KEY = st.secrets.get("UNSPLASH_KEY", "")
+PEXELS_KEY = st.secrets.get("PEXELS_KEY", "")
 
-st.set_page_config(page_title="Quote Video Maker", layout="wide")
-st.title("🎬 Quote Video Maker")
+# ---------------- Helpers ----------------
 
-# App state
-background_source = st.radio("Choose a background type:", ["Image", "Video"])
-text = st.text_area("Enter your quote:", height=150)
+def fetch_unsplash(keyword):
+    headers = {"Authorization": f"Client-ID {UNSPLASH_KEY}"}
+    r = requests.get(f"https://api.unsplash.com/photos/random?query={keyword}", headers=headers)
+    if r.status_code == 200:
+        return requests.get(r.json()["urls"]["regular"]).content
+    return None
 
-voiceover_enabled = st.checkbox("Add voiceover with gTTS")
-voice_lang = st.selectbox("Voiceover language", ["en", "es", "fr"], index=0) if voiceover_enabled else None
+def fetch_pexels_video(keyword):
+    headers = {"Authorization": PEXELS_KEY}
+    r = requests.get(f"https://api.pexels.com/videos/search?query={keyword}&per_page=1", headers=headers)
+    if r.status_code == 200 and r.json()["videos"]:
+        return r.json()["videos"][0]["video_files"][0]["link"]
+    return None
 
-submit = st.button("Generate Video")
-
-font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-font_size = 60
-font_color = (255, 255, 255)
-video_size = (1280, 720)
-duration = 8
-
-def download_image(url):
-    response = requests.get(url)
-    return Image.open(BytesIO(response.content)).convert("RGB")
-
-def create_text_clip(text, size, duration):
-    def make_frame(t):
-        img = Image.new("RGB", size, (0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype(font_path, font_size)
-        except:
-            font = ImageFont.load_default()
-        text_size = draw.textbbox((0,0), text, font=font)
-        text_width = text_size[2] - text_size[0]
-        text_height = text_size[3] - text_size[1]
-        x = (size[0] - text_width) // 2
-        y = (size[1] - text_height) // 2
-        draw.text((x, y), text, font=font, fill=font_color)
-        return np.array(img)
-    return VideoClip(make_frame, duration=duration)
-
-if submit and text:
-    with st.spinner("Generating video..."):
-        # Prepare background
-        if background_source == "Image":
-            bg_url = f"https://api.pexels.com/v1/search?query=nature&per_page=1"
-            headers = {"Authorization": st.secrets["PEXELS_KEY"]}
-            res = requests.get(bg_url, headers=headers)
-            img_url = res.json()["photos"][0]["src"]["landscape"]
-            img = download_image(img_url).resize(video_size)
-            bg_clip = ImageClip(np.array(img)).set_duration(duration)
+def wrap_lines(text, draw, font, max_w):
+    words, line, lines = text.split(), "", []
+    for w in words:
+        if draw.textlength(f"{line} {w}", font=font) <= max_w:
+            line += f" {w}" if line else w
         else:
-            video_url = f"https://api.pexels.com/videos/search?query=nature&per_page=1"
-            headers = {"Authorization": st.secrets["PEXELS_KEY"]}
-            res = requests.get(video_url, headers=headers)
-            video_link = res.json()["videos"][0]["video_files"][0]["link"]
-            vid_res = requests.get(video_link)
-            temp_vid = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-            temp_vid.write(vid_res.content)
-            temp_vid.close()
-            bg_clip = VideoFileClip(temp_vid.name).resize(video_size).subclip(0, duration)
+            lines.append(line); line = w
+    if line: lines.append(line)
+    return lines
 
-        # Prepare text
-        txt_clip = create_text_clip(text, video_size, duration)
+def text_frame(size, text, font, color):
+    W, H = size
+    img = Image.new("RGBA", size, (0,0,0,0)); draw = ImageDraw.Draw(img)
+    lines = wrap_lines(text, draw, font, W-80)
+    y = (H - len(lines)*(font.size+10))//2
+    for ln in lines:
+        w = draw.textlength(ln, font=font)
+        draw.text(((W-w)//2, y), ln, font=font, fill=color)
+        y += font.size+10
+    return img
 
-        # Compose video
-        final = CompositeVideoClip([bg_clip, txt_clip.set_position('center')])
+def typewriter_frames(size, text, font, color, duration):
+    chars = list(text)
+    total_frames = int(duration * 24)
+    def make_frame(t):
+        i = min(int(len(chars) * t / duration), len(chars))
+        partial = ''.join(chars[:i])
+        img = Image.new("RGBA", size, (0,0,0,0))
+        draw = ImageDraw.Draw(img)
+        lines = wrap_lines(partial, draw, font, size[0]-80)
+        y = size[1] - len(lines)*(font.size+10) - 40
+        for ln in lines:
+            w = draw.textlength(ln, font=font)
+            draw.text(((size[0]-w)//2, y), ln, font=font, fill=color)
+            y += font.size+10
+        return np.array(img)
+    return VideoClip(make_frame=make_frame, duration=duration).set_position(("center","bottom"))
 
-        # Add voiceover if selected
-        if voiceover_enabled:
-            tts = gTTS(text, lang=voice_lang)
-            tts_fp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-            tts.save(tts_fp.name)
-            tts_fp.close()
-            final = final.set_audio(AudioFileClip(tts_fp.name))
+def animated_text_clip(size, text, font, color, mode, duration):
+    if mode == "Typewriter":
+        return typewriter_frames(size, text, font, color, duration).set_position("center")
+    base_img = text_frame(size, text, font, color)
+    base_clip = ImageClip(np.array(base_img)).set_duration(duration)
+    if mode == "Ascend":
+        return base_clip.set_position(lambda t: ("center", size[1] * (1 - t / duration) - base_img.height / 2))
+    elif mode == "Shift":
+        return base_clip.set_position(lambda t: (size[0] * (1 - t / duration) - base_img.width / 2, "center"))
+    else:
+        return base_clip.set_position("center")
 
-        # Output
-        out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        final.write_videofile(out.name, fps=24, preset="ultrafast")
+# ---------------- Streamlit UI -----------------
 
-        st.success("✅ Video generated successfully!")
-        st.video(out.name)
+st.set_page_config("Quote Video Maker", layout="wide")
+st.title("🎞️ Quote Video Maker – Animated & Merged")
 
-        # Clean up
-        if background_source == "Video":
-            os.remove(temp_vid.name)
-        if voiceover_enabled:
-            os.remove(tts_fp.name)
-        os.remove(out.name)
+st.sidebar.header("Settings")
+media_type = st.sidebar.selectbox("Background Media", ["Image", "Video"])
+fmt = st.sidebar.selectbox("Format", ["Vertical", "Square"])
+W,H = (720,1280) if fmt=="Vertical" else (720,720)
+
+if media_type=="Image":
+    img_src = st.sidebar.radio("Image Source", ["Upload","Unsplash"], horizontal=True)
+    if img_src=="Upload":
+        img_files = st.sidebar.file_uploader("Upload one or more images", accept_multiple_files=True, type=["jpg","jpeg","png"])
+    else:
+        kw = st.sidebar.text_input("Unsplash keyword", "nature")
+        num_imgs = st.sidebar.slider("# random images",1,5,3)
+else:
+    vid_src = st.sidebar.radio("Video Source", ["Upload","Pexels"], horizontal=True)
+    if vid_src=="Upload":
+        vid_files = st.sidebar.file_uploader("Upload one or more videos", accept_multiple_files=True, type=["mp4"])
+    else:
+        kw = st.sidebar.text_input("Pexels keyword", "nature")
+        num_vids = st.sidebar.slider("# random videos",1,3,1)
+
+music_mode = st.sidebar.radio("Music", ["Upload","Sample"], horizontal=True)
+if music_mode=="Upload":
+    music_file = st.sidebar.file_uploader("Upload mp3", type=["mp3"])
+else:
+    samples=[f for f in os.listdir(SAMPLE_MUSIC_DIR) if f.endswith(".mp3")] if os.path.isdir(SAMPLE_MUSIC_DIR) else []
+    sample_choice= st.sidebar.selectbox("Sample track", samples) if samples else None
+
+font_size = st.sidebar.slider("Font size",30,100,60)
+text_color = st.sidebar.color_picker("Text color","#FFFFFF")
+quote_dur = st.sidebar.slider("Seconds per quote",3,15,6)
+text_anim = st.sidebar.selectbox("Text animation",["None","Typewriter","Ascend","Shift"])
+trans_dur = st.sidebar.slider("Transition (sec)",0.5,2.0,1.0,0.1)
+voiceover = st.sidebar.checkbox("AI narration (gTTS)")
+voice_lang = st.sidebar.selectbox("Voice language",["en","es","fr"],disabled=not voiceover)
+
+quotes_raw = st.text_area("Quotes – separate each by blank line",height=250)
+
+if st.button("Generate Video"):
+    quotes=[q.strip() for q in quotes_raw.split("\n\n") if q.strip()]
+    if not quotes:
+        st.error("Provide at least one quote."); st.stop()
+    font=ImageFont.truetype(FONT_PATH,font_size)
+    bg_clips=[]
+    for i,q in enumerate(quotes):
+        bg=bg_clips[i % len(bg_clips)].copy()
+        txt_clip=animated_text_clip((W,H), q, font, text_color, text_anim, quote_dur)
+        comp=CompositeVideoClip([bg,txt_clip])
+        if i>0:
+            comp = comp.crossfadein(trans_dur)
+        clips.append(comp)
+
+    video = concatenate_videoclips(clips, method="compose")
+    video = clips[0]
+    else:
+        timeline = []
+        current_start = 0
+        for idx, c in enumerate(clips):
+            if idx == 0:
+                timeline.append(c.set_start(current_start))
+            else:
+                timeline.append(c.set_start(current_start).crossfadein(trans_dur))
+            current_start += quote_dur - trans_dur
+        video = concatenate_videoclips(clips, method="compose", padding=-trans_dur, transition=clips[0].crossfadein(trans_dur))
+        
+
+    if music_mode=="Upload" and music_file:
+        mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
+        bg_audio=AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
+    elif music_mode=="Sample" and sample_choice:
+        bg_audio=AudioFileClip(os.path.join(SAMPLE_MUSIC_DIR,sample_choice)).volumex(0.3).audio_loop(duration=video.duration)
+    else:
+        bg_audio=None
+
+    if voiceover:
+        tts_path=os.path.join(TEMP_DIR,"voice.mp3"); gTTS(" ".join(quotes),lang=voice_lang).save(tts_path)
+        voice_clip=AudioFileClip(tts_path)
+        if voice_clip.duration < video.duration:
+            voice_clip=voice_clip.audio_loop(duration=video.duration)
+        final_audio=CompositeAudioClip([voice_clip, bg_audio]) if bg_audio else voice_clip
+    else:
+        final_audio=bg_audio
+
+    if final_audio:
+        video=video.set_audio(final_audio)
+
+    out=os.path.join(TEMP_DIR,"final.mp4")
+    video.write_videofile(out,fps=24,preset="ultrafast")
+    st.success("Done!")
+    st.video(out)
+    st.download_button("Download",open(out,"rb"),"video.mp4")
+
+
