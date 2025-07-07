@@ -148,8 +148,7 @@ if st.button("Generate Video"):
                 bg_clips.append(
                     ImageClip(np.array(img))
                     .set_duration(quote_dur)
-                    .resize((W, H))
-                    .on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
+                ), col_opacity=1)
                 )
         else:
             for _ in range(num_imgs):
@@ -159,10 +158,9 @@ if st.button("Generate Video"):
                     if img.mode == "RGBA":
                         img = img.convert("RGB")
                     bg_clips.append(
-                        ImageClip(np.array(img))
-                        .set_duration(quote_dur)
-                        .resize((W, H))
-                        .on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
+                    ImageClip(np.array(img))
+                    .set_duration(quote_dur)
+                ), col_opacity=1)
                     )
     else:
         if vid_src == "Upload":
@@ -174,15 +172,10 @@ if st.button("Generate Video"):
                     tmp.write(file.read())
                     tmp.flush()
                     clip = VideoFileClip(tmp.name).subclip(0, quote_dur).resize((W, H)).on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
-                    bg_clips.append(clip)
-        else:
-            for i in range(num_vids):
-                url = fetch_pexels_video(kw)
-                if url:
-                    vid_path = os.path.join(TEMP_DIR, f"pexels_{i}.mp4")
-                    with open(vid_path, "wb") as f:
-                        f.write(requests.get(url).content)
-                    clip = VideoFileClip(vid_path).subclip(0, quote_dur).resize((W, H)).on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
+                    bg_clips.append(
+                    ImageClip(np.array(img))
+                    .set_duration(quote_dur)
+                ), col_opacity=1)
                     bg_clips.append(clip)
 
     if not bg_clips:
