@@ -158,13 +158,15 @@ if st.button("Generate Video"):
             if img.mode == "RGBA":
                 img = img.convert("RGB")
                 bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
-                bg_clips.append(safe_imageclip(img, duration))
         else:  # Unsplash
             for _ in range(num_imgs):
                 content = fetch_unsplash(kw)
                 if content:
                     img = Image.open(io.BytesIO(content)).resize((W, H))
-                    bg_clips.append(safe_imageclip(img, duration))
+if img.mode == "RGBA":
+    img = img.convert("RGB")
+bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
+
     else:  # Video
         if vid_src == "Upload":
             if not vid_files:
