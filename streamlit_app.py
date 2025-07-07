@@ -121,57 +121,95 @@ voice_lang = st.sidebar.selectbox("Voice language",["en","es","fr"],disabled=not
 quotes_raw = st.text_area("Quotes – separate each by blank line",height=250)
 
 if st.button("Generate Video"):
-    quotes=[q.strip() for q in quotes_raw.split("\n\n") if q.strip()]
+    quotes = [q.strip() for q in quotes_raw.split("\n\n") if q.strip()]
     if not quotes:
-        st.error("Provide at least one quote."); st.stop()
-    font=ImageFont.truetype(FONT_PATH,font_size)
-    bg_clips=[]
-    for i,q in enumerate(quotes):
-        bg=bg_clips[i % len(bg_clips)].copy()
-        txt_clip=animated_text_clip((W,H), q, font, text_color, text_anim, quote_dur)
-        comp=CompositeVideoClip([bg,txt_clip])
-        if i>0:
-            comp = comp.crossfadein(trans_dur)
+        st.error("Provide at least one quote.")
+        st.stop()
+
+    font = ImageFont.truetype(FONT_PATH, font_size)
+    bg_clips = []
+
+    # --- Load background media ---
+    if media_type == "Image":
+        if img_src == "Upload" and img_files:
+            for file in img_files:
+                img = Image.open(file).resize((W, H))
+                bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
+        elif img_src == "Unsplash":
+            for _ in range(num_imgs):
+                content = fetch_unsplash(kw)
+                if content:
+                    img = Image.open(io.BytesIO(content)).resize((W, H))
+                    bg_clips.append(ImageClip(np.array(img)).set_duration(quote_dur))
+
+    elif media_type == "Video":
+        if vid_src == "Upload" and vid_files:
+            for file in vid_files:
+                clip = VideoFileClip(file.name).resize((W, H)).subclip(0, quote_dur)
+                bg_clips.append(clip)
+        elif vid_src == "Pexels":
+            for i in range(num_vids):
+                url = fetch_pexels_video(kw)
+                if url:
+                    vid_path = os.path.join(TEMP_DIR, f"pexels_{i}.mp4")
+                    with open(vid_path, "wb") as f:
+                        f.write(requests.get(url).content)
+                    bg_clips.append(VideoFileClip(vid_path).resize((W, H)).subclip(0, quote_dur))
+
+    if not bg_clips:
+        st.error("No background media loaded. Please upload or fetch images/videos.")
+        st.stop()
+
+    # --- Build quote clips ---
+    clips = []
+    for i, q in enumerate(quotes):
+        bg = bg_clips[i % len(bg_clips)].copy()
+        txt_clip = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
+        comp = CompositeVideoClip([bg, txt_clip]).set_duration(quote_dur)
         clips.append(comp)
 
+    # --- Combine clips with transitions ---
     if len(clips) == 1:
         video = clips[0]
     else:
         timeline = []
         current_start = 0
-    for idx, c in enumerate(clips):
-        if idx == 0:
-            timeline.append(c.set_start(current_start))
-    else:
-            timeline.append(c.set_start(current_start).crossfadein(trans_dur))
+        for idx, c in enumerate(clips):
+            if idx == 0:
+                timeline.append(c.set_start(current_start))
+            else:
+                timeline.append(c.set_start(current_start).crossfadein(trans_dur))
             current_start += quote_dur - trans_dur
-    video = CompositeVideoClip(timeline, size=(W,H)).set_duration(current_start + trans_dur)
+        video = CompositeVideoClip(timeline, size=(W, H)).set_duration(current_start + trans_dur)
 
+    # --- Background music ---
+    bg_audio = None
+    if music_mode == "Upload" and music_file:
+        mp3_path = os.path.join(TEMP_DIR, "music.mp3")
+        with open(mp3_path, "wb") as f:
+            f.write(music_file.read())
+        bg_audio = AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
+    elif music_mode == "Sample" and sample_choice:
+        sample_path = os.path.join(SAMPLE_MUSIC_DIR, sample_choice)
+        bg_audio = AudioFileClip(sample_path).volumex(0.3).audio_loop(duration=video.duration)
 
-    if music_mode=="Upload" and music_file:
-        mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
-        bg_audio=AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
-    elif music_mode=="Sample" and sample_choice:
-        bg_audio=AudioFileClip(os.path.join(SAMPLE_MUSIC_DIR,sample_choice)).volumex(0.3).audio_loop(duration=video.duration)
-    else:
-        bg_audio=None
-
+    # --- Voiceover (gTTS) ---
     if voiceover:
-        tts_path=os.path.join(TEMP_DIR,"voice.mp3"); gTTS(" ".join(quotes),lang=voice_lang).save(tts_path)
-        voice_clip=AudioFileClip(tts_path)
+        tts_path = os.path.join(TEMP_DIR, "voice.mp3")
+        gTTS(" ".join(quotes), lang=voice_lang).save(tts_path)
+        voice_clip = AudioFileClip(tts_path)
         if voice_clip.duration < video.duration:
-            voice_clip=voice_clip.audio_loop(duration=video.duration)
-        final_audio=CompositeAudioClip([voice_clip, bg_audio]) if bg_audio else voice_clip
+            voice_clip = voice_clip.audio_loop(duration=video.duration)
+        final_audio = CompositeAudioClip([voice_clip, bg_audio]) if bg_audio else voice_clip
     else:
-        final_audio=bg_audio
+        final_audio = bg_audio
 
     if final_audio:
-        video=video.set_audio(final_audio)
+        video = video.set_audio(final_audio)
 
-    out=os.path.join(TEMP_DIR,"final.mp4")
-    video.write_videofile(out,fps=24,preset="ultrafast")
+    # --- Export final video ---
+    out_path = os.path.join(TEMP_DIR, "final.mp4")
+    video.write_videofile(out_path, fps=24, preset="ultrafast")
     st.success("Done!")
-    st.video(out)
-    st.download_button("Download",open(out,"rb"),"video.mp4")
-
-
+    st.video(out_path)
+    st.download_button("Download", open(out_path, "rb"), file_name="video.mp4")
