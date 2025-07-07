@@ -180,7 +180,7 @@ if st.button("Generate Video"):
                 timeline.append(c.set_start(current_start).crossfadein(trans_dur))
             current_start += quote_dur - trans_dur
         video = concatenate_videoclips(clips, method="compose", padding=-trans_dur, transition=clips[0].crossfadein(trans_dur))
-        )
+        
 
     if music_mode=="Upload" and music_file:
         mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
