@@ -1,4 +1,4 @@
-# streamlit_app.py (v5 – Fix transitions & real typewriter)
+# streamlit_app.py (v6 – Fixed black screen with video backgrounds)
 import streamlit as st
 from moviepy.editor import *
 import requests, os, io, textwrap, tempfile, numpy as np
@@ -54,12 +54,13 @@ def text_frame(size, text, font, color):
     y = (H - len(lines)*(font.size+10))//2
     for ln in lines:
         w = draw.textlength(ln, font=font)
-        draw.text(((W-w)//2, y), ln, font=font, fill=color)
+        draw.text(((W-w)//2, y), ln, font=font, fill=(255,255,255))
         y += font.size+10
     return img.convert("RGB")
 
 def typewriter_frames(size, text, font, color, duration):
     chars = list(text)
+    total_frames = int(duration * 24)
     def make_frame(t):
         i = min(int(len(chars) * t / duration), len(chars))
         partial = ''.join(chars[:i])
@@ -69,14 +70,14 @@ def typewriter_frames(size, text, font, color, duration):
         y = size[1] - len(lines)*(font.size+10) - 40
         for ln in lines:
             w = draw.textlength(ln, font=font)
-            draw.text(((size[0]-w)//2, y), ln, font=font, fill=color)
+            draw.text(((size[0]-w)//2, y), ln, font=font, fill=(255,255,255))
             y += font.size+10
         return np.array(img.convert("RGB"))
-    return VideoClip(make_frame=make_frame, duration=duration).set_position(("center","bottom"))
+    return VideoClip(make_frame=make_frame, duration=duration).set_position("center")
 
 def animated_text_clip(size, text, font, color, mode, duration):
     if mode == "Typewriter":
-        return typewriter_frames(size, text, font, color, duration).set_position("center")
+        return typewriter_frames(size, text, font, color, duration)
     base_img = text_frame(size, text, font, color)
     base_clip = ImageClip(np.array(base_img)).set_duration(duration)
     if mode == "Ascend":
@@ -136,33 +137,7 @@ if st.button("Generate Video"):
     clips = []
     bg_clips = []
 
-    if media_type == "Image":
-        if img_src == "Upload":
-            if not img_files:
-                st.error("Please upload at least one image.")
-                st.stop()
-            for file in img_files:
-                img = Image.open(file).resize((W, H))
-                if img.mode == "RGBA":
-                    img = img.convert("RGB")
-                bg_clips.append(
-                    ImageClip(np.array(img))
-                    .set_duration(quote_dur)
-                ), col_opacity=1)
-                    )
-        else:
-            for _ in range(num_imgs):
-                content = fetch_unsplash(kw)
-                if content:
-                    img = Image.open(io.BytesIO(content)).resize((W, H))
-                    if img.mode == "RGBA":
-                        img = img.convert("RGB")
-                    bg_clips.append(
-                    ImageClip(np.array(img))
-                    .set_duration(quote_dur)
-                ), col_opacity=1)
-                    )
-    else:
+    if media_type == "Video":
         if vid_src == "Upload":
             if not vid_files:
                 st.error("Please upload at least one video.")
@@ -171,21 +146,36 @@ if st.button("Generate Video"):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                     tmp.write(file.read())
                     tmp.flush()
-                    clip = VideoFileClip(tmp.name).subclip(0, quote_dur).resize((W, H)).on_color(size=(W, H), color=(0, 0, 0), col_opacity=1)
-                    bg_clips.append(
-                    ImageClip(np.array(img))
-                    .set_duration(quote_dur)
-                ), col_opacity=1)
-                    bg_clips.append(clip)
+                    try:
+                        clip = VideoFileClip(tmp.name)
+                        duration = min(quote_dur, clip.duration)
+                        bg_clip = clip.subclip(0, duration).resize((W, H)).set_position("center").without_audio()
+                        bg_clips.append(bg_clip)
+                    except Exception as e:
+                        st.warning(f"Failed to load video: {file.name} – {e}")
+        else:
+            for i in range(num_vids):
+                url = fetch_pexels_video(kw)
+                if url:
+                    vid_path = os.path.join(TEMP_DIR, f"pexels_{i}.mp4")
+                    with open(vid_path, "wb") as f:
+                        f.write(requests.get(url).content)
+                    try:
+                        clip = VideoFileClip(vid_path)
+                        duration = min(quote_dur, clip.duration)
+                        bg_clip = clip.subclip(0, duration).resize((W, H)).set_position("center").without_audio()
+                        bg_clips.append(bg_clip)
+                    except Exception as e:
+                        st.warning(f"Failed to load Pexels video #{i} – {e}")
 
     if not bg_clips:
         st.error("Could not load any background media.")
         st.stop()
 
     for i, q in enumerate(quotes):
-        bg = bg_clips[i % len(bg_clips)].set_duration(quote_dur)
+        bg = bg_clips[i % len(bg_clips)].set_position("center")
         txt_clip = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
-        comp = CompositeVideoClip([bg, txt_clip], size=(W, H))
+        comp = CompositeVideoClip([bg.set_duration(quote_dur), txt_clip.set_duration(quote_dur)], size=(W, H))
         clips.append(comp)
 
     if len(clips) == 1:
