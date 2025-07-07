@@ -148,7 +148,7 @@ if st.button("Generate Video"):
                 bg_clips.append(
                     ImageClip(np.array(img))
                     .set_duration(quote_dur)
-                ), col_opacity=1)
+                ), col_opacity=1
                 
         else:
             for _ in range(num_imgs):
