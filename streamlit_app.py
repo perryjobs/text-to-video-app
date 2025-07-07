@@ -186,7 +186,7 @@ bg_clips.append(
 
 
     # Now create clips with text overlay
-        clips = []
+clips = []
     for i, q in enumerate(quotes):
         bg = bg_clips[i % len(bg_clips)]
         txt_clip = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
