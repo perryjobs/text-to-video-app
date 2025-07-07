@@ -1,28 +1,27 @@
-# streamlit_app.py (v6 – Fixed black screen with video backgrounds)
+# streamlit_app.py (Fixed black screen for video backgrounds)
 import streamlit as st
 from moviepy.editor import *
 import requests, os, io, textwrap, tempfile, numpy as np
 from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFont, __version__ as PILLOW_VERSION
 
-def safe_imageclip(image, duration):
-    if image.mode == "RGBA":
-        image = image.convert("RGB")
-    return ImageClip(np.array(image)).set_duration(duration)
-
-if int(PILLOW_VERSION.split('.')[0]) < 10:
-    st.error("This app requires Pillow >= 10.0.0. Please upgrade Pillow by running:\n\n`pip install --upgrade Pillow`")
-    st.stop()
-
+# ✅ Monkey patch for Pillow >=10
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
+# ✅ Ensure Pillow version is compatible
+if int(PILLOW_VERSION.split('.')[0]) < 10:
+    st.error("This app requires Pillow >= 10. Please upgrade Pillow.")
+    st.stop()
+
+# --- Constants ---
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 SAMPLE_MUSIC_DIR = "sample_music"
 TEMP_DIR = tempfile.mkdtemp()
 UNSPLASH_KEY = st.secrets.get("UNSPLASH_KEY", "")
 PEXELS_KEY = st.secrets.get("PEXELS_KEY", "")
 
+# --- Helpers ---
 def fetch_unsplash(keyword):
     headers = {"Authorization": f"Client-ID {UNSPLASH_KEY}"}
     r = requests.get(f"https://api.unsplash.com/photos/random?query={keyword}", headers=headers)
@@ -49,35 +48,34 @@ def wrap_lines(text, draw, font, max_w):
 
 def text_frame(size, text, font, color):
     W, H = size
-    img = Image.new("RGBA", size, (0,0,0,0)); draw = ImageDraw.Draw(img)
-    lines = wrap_lines(text, draw, font, W-80)
-    y = (H - len(lines)*(font.size+10))//2
+    img = Image.new("RGB", size, (0, 0, 0)); draw = ImageDraw.Draw(img)
+    lines = wrap_lines(text, draw, font, W - 80)
+    y = (H - len(lines) * (font.size + 10)) // 2
     for ln in lines:
         w = draw.textlength(ln, font=font)
-        draw.text(((W-w)//2, y), ln, font=font, fill=(255,255,255))
-        y += font.size+10
-    return img.convert("RGB")
+        draw.text(((W - w) // 2, y), ln, font=font, fill=color)
+        y += font.size + 10
+    return img
 
 def typewriter_frames(size, text, font, color, duration):
     chars = list(text)
-    total_frames = int(duration * 24)
     def make_frame(t):
         i = min(int(len(chars) * t / duration), len(chars))
         partial = ''.join(chars[:i])
-        img = Image.new("RGBA", size, (0,0,0,0))
+        img = Image.new("RGB", size, (0,0,0))
         draw = ImageDraw.Draw(img)
         lines = wrap_lines(partial, draw, font, size[0]-80)
         y = size[1] - len(lines)*(font.size+10) - 40
         for ln in lines:
             w = draw.textlength(ln, font=font)
-            draw.text(((size[0]-w)//2, y), ln, font=font, fill=(255,255,255))
+            draw.text(((size[0]-w)//2, y), ln, font=font, fill=color)
             y += font.size+10
-        return np.array(img.convert("RGB"))
-    return VideoClip(make_frame=make_frame, duration=duration).set_position("center")
+        return np.array(img)
+    return VideoClip(make_frame=make_frame, duration=duration)
 
 def animated_text_clip(size, text, font, color, mode, duration):
     if mode == "Typewriter":
-        return typewriter_frames(size, text, font, color, duration)
+        return typewriter_frames(size, text, font, color, duration).set_position("center")
     base_img = text_frame(size, text, font, color)
     base_clip = ImageClip(np.array(base_img)).set_duration(duration)
     if mode == "Ascend":
@@ -87,6 +85,7 @@ def animated_text_clip(size, text, font, color, mode, duration):
     else:
         return base_clip.set_position("center")
 
+# ---------------- Streamlit UI -----------------
 st.set_page_config("Quote Video Maker", layout="wide")
 st.title("🎞️ Quote Video Maker – Animated & Merged")
 
@@ -98,14 +97,14 @@ W,H = (720,1280) if fmt=="Vertical" else (720,720)
 if media_type=="Image":
     img_src = st.sidebar.radio("Image Source", ["Upload","Unsplash"], horizontal=True)
     if img_src=="Upload":
-        img_files = st.sidebar.file_uploader("Upload one or more images", accept_multiple_files=True, type=["jpg","jpeg","png"])
+        img_files = st.sidebar.file_uploader("Upload images", accept_multiple_files=True, type=["jpg","jpeg","png"])
     else:
         kw = st.sidebar.text_input("Unsplash keyword", "nature")
         num_imgs = st.sidebar.slider("# random images",1,5,3)
 else:
     vid_src = st.sidebar.radio("Video Source", ["Upload","Pexels"], horizontal=True)
     if vid_src=="Upload":
-        vid_files = st.sidebar.file_uploader("Upload one or more videos", accept_multiple_files=True, type=["mp4"])
+        vid_files = st.sidebar.file_uploader("Upload videos", accept_multiple_files=True, type=["mp4"])
     else:
         kw = st.sidebar.text_input("Pexels keyword", "nature")
         num_vids = st.sidebar.slider("# random videos",1,3,1)
@@ -137,46 +136,31 @@ if st.button("Generate Video"):
     clips = []
     bg_clips = []
 
-    if media_type == "Video":
-        if vid_src == "Upload":
-            if not vid_files:
-                st.error("Please upload at least one video.")
-                st.stop()
+    if media_type == "Image":
+        for _ in range(num_imgs):
+            content = fetch_unsplash(kw) if img_src == "Unsplash" else None
+            img = Image.open(io.BytesIO(content)) if content else Image.open(img_files[0])
+            bg_clips.append(ImageClip(np.array(img.convert("RGB"))).set_duration(quote_dur).resize((W, H)))
+    else:
+        if vid_src == "Pexels":
+            for i in range(num_vids):
+                url = fetch_pexels_video(kw)
+                if url:
+                    path = os.path.join(TEMP_DIR, f"pexels_{i}.mp4")
+                    with open(path, "wb") as f:
+                        f.write(requests.get(url).content)
+                    bg_clips.append(VideoFileClip(path).resize((W, H)).subclip(0, quote_dur))
+        else:
             for file in vid_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                     tmp.write(file.read())
                     tmp.flush()
-                    try:
-                        clip = VideoFileClip(tmp.name)
-                        duration = min(quote_dur, clip.duration)
-                        bg_clip = clip.subclip(0, duration).resize((W, H)).set_position("center").without_audio()
-                        bg_clips.append(bg_clip)
-                    except Exception as e:
-                        st.warning(f"Failed to load video: {file.name} – {e}")
-        else:
-            for i in range(num_vids):
-                url = fetch_pexels_video(kw)
-                if url:
-                    vid_path = os.path.join(TEMP_DIR, f"pexels_{i}.mp4")
-                    with open(vid_path, "wb") as f:
-                        f.write(requests.get(url).content)
-                    try:
-                        clip = VideoFileClip(vid_path)
-                        duration = min(quote_dur, clip.duration)
-                        bg_clip = clip.subclip(0, duration).resize((W, H)).set_position("center").without_audio()
-                        bg_clips.append(bg_clip)
-                    except Exception as e:
-                        st.warning(f"Failed to load Pexels video #{i} – {e}")
-
-    if not bg_clips:
-        st.error("Could not load any background media.")
-        st.stop()
+                    bg_clips.append(VideoFileClip(tmp.name).resize((W, H)).subclip(0, quote_dur))
 
     for i, q in enumerate(quotes):
-        bg = bg_clips[i % len(bg_clips)].set_position("center")
-        txt_clip = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
-        comp = CompositeVideoClip([bg.set_duration(quote_dur), txt_clip.set_duration(quote_dur)], size=(W, H))
-        clips.append(comp)
+        bg = bg_clips[i % len(bg_clips)].set_duration(quote_dur)
+        txt = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
+        clips.append(CompositeVideoClip([bg, txt], size=(W, H)))
 
     if len(clips) == 1:
         video = clips[0]
@@ -184,31 +168,28 @@ if st.button("Generate Video"):
         timeline = []
         current_start = 0
         for idx, c in enumerate(clips):
-            if idx == 0:
-                timeline.append(c.set_start(current_start))
-            else:
-                timeline.append(c.set_start(current_start).crossfadein(trans_dur))
-            current_start += quote_dur - trans_dur
+            timeline.append(c.set_start(current_start).crossfadein(trans_dur if idx > 0 else 0))
+            current_start += quote_dur - (trans_dur if idx > 0 else 0)
         video = CompositeVideoClip(timeline, size=(W, H)).set_duration(current_start + trans_dur)
 
     bg_audio = None
     if music_mode == "Upload" and music_file:
-        mp3_path = os.path.join(TEMP_DIR, "music.mp3")
-        with open(mp3_path, "wb") as f:
-            f.write(music_file.read())
-        bg_audio = AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
+        path = os.path.join(TEMP_DIR, "music.mp3")
+        open(path, "wb").write(music_file.read())
+        bg_audio = AudioFileClip(path).volumex(0.3).audio_loop(duration=video.duration)
     elif music_mode == "Sample" and sample_choice:
-        sample_path = os.path.join(SAMPLE_MUSIC_DIR, sample_choice)
-        bg_audio = AudioFileClip(sample_path).volumex(0.3).audio_loop(duration=video.duration)
+        path = os.path.join(SAMPLE_MUSIC_DIR, sample_choice)
+        bg_audio = AudioFileClip(path).volumex(0.3).audio_loop(duration=video.duration)
 
-    final_audio = bg_audio
     if voiceover:
-        tts_path = os.path.join(TEMP_DIR, "voice.mp3")
-        gTTS(" ".join(quotes), lang=voice_lang).save(tts_path)
-        voice_clip = AudioFileClip(tts_path)
+        voice_path = os.path.join(TEMP_DIR, "voice.mp3")
+        gTTS(" ".join(quotes), lang=voice_lang).save(voice_path)
+        voice_clip = AudioFileClip(voice_path)
         if voice_clip.duration < video.duration:
             voice_clip = voice_clip.audio_loop(duration=video.duration)
         final_audio = CompositeAudioClip([voice_clip, bg_audio]) if bg_audio else voice_clip
+    else:
+        final_audio = bg_audio
 
     if final_audio:
         video = video.set_audio(final_audio)
