@@ -1,4 +1,4 @@
-# streamlit_app.py (v4 – transitions & animated text)
+# streamlit_app.py (v5 – Fix transitions & real typewriter)
 import streamlit as st
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
@@ -49,16 +49,29 @@ def text_frame(size, text, font, color):
         y += font.size+10
     return img
 
-# Animated text overlay clip
+def typewriter_frames(size, text, font, color, duration):
+    frames = []
+    chars = list(text)
+    total_frames = int(duration * 24)
+    for i in range(len(chars)+1):
+        img = Image.new("RGBA", size, (0,0,0,0))
+        draw = ImageDraw.Draw(img)
+        txt = ''.join(chars[:i])
+        lines = wrap_lines(txt, draw, font, size[0]-80)
+        y = (size[1] - len(lines)*(font.size+10))//2
+        for ln in lines:
+            w = draw.textlength(ln, font=font)
+            draw.text(((size[0]-w)//2, y), ln, font=font, fill=color)
+            y += font.size+10
+        frames.append(np.array(img))
+    return ImageSequenceClip(frames, fps=24).set_duration(duration)
 
 def animated_text_clip(size, text, font, color, mode, duration):
+    if mode == "Typewriter":
+        return typewriter_frames(size, text, font, color, duration).set_position("center")
     base_img = text_frame(size, text, font, color)
     base_clip = ImageClip(np.array(base_img)).set_duration(duration)
-
-    if mode == "Typewriter":
-        # Reveal horizontally like a typewriter
-        return base_clip.fl(lambda gf, t: gf(t)[:, : int(size[0] * (t / duration))], apply_to=["mask"]).set_position("center")
-    elif mode == "Ascend":
+    if mode == "Ascend":
         return base_clip.set_position(lambda t: ("center", size[1] * (1 - t / duration) - base_img.height / 2))
     elif mode == "Shift":
         return base_clip.set_position(lambda t: (size[0] * (1 - t / duration) - base_img.width / 2, "center"))
@@ -146,9 +159,8 @@ if st.button("Generate Video"):
             path=v if isinstance(v,str) else os.path.join(TEMP_DIR,v.name)
             if not isinstance(v,str):
                 with open(path,"wb") as fp: fp.write(v.read())
-            bg_clips.append(VideoFileClip(path).subclip(0,quote_dur).without_audio())
+            bg_clips.append(VideoFileClip(path).subclip(0,quote_dur).resize((W,H)).without_audio())
 
-    # build quote clips with animation
     clips=[]
     for i,q in enumerate(quotes):
         bg=bg_clips[i % len(bg_clips)].copy()
@@ -156,8 +168,7 @@ if st.button("Generate Video"):
         comp=CompositeVideoClip([bg,txt_clip.set_position("center")])
         clips.append(comp)
 
-    # add dissolve transition
-    if len(clips) == 1:
+    if len(clips)==1:
         video = clips[0]
     else:
         video = concatenate_videoclips(
@@ -167,7 +178,6 @@ if st.button("Generate Video"):
             transition=clips[0].crossfadein(trans_dur)
         )
 
-    # handle audio
     if music_mode=="Upload" and music_file:
         mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
         bg_audio=AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
