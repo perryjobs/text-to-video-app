@@ -136,7 +136,7 @@ if st.button("Generate Video"):
 
     video = concatenate_videoclips(clips, method="compose")
     video = clips[0]
-            else:
+        else:
         timeline = []
         current_start = 0
         for idx, c in enumerate(clips):
