@@ -5,47 +5,56 @@ import numpy as np
 import tempfile
 import os
 
-# Set final resolution
+# Final resolution
 W, H = 1080, 1920
 TEMP_DIR = tempfile.mkdtemp()
 
-# Streamlit UI
 st.set_page_config(layout="wide")
-st.title("🎬 Video + Text Overlay Test")
+st.title("🛠️ Fixing Black Screen – Transparent Text on Video")
 
-uploaded_video = st.file_uploader("Upload a vertical MP4 video", type=["mp4"])
-quote_text = st.text_input("Enter your quote text", "You are enough.")
+uploaded_video = st.file_uploader("Upload vertical MP4 video (9:16)", type=["mp4"])
+quote_text = st.text_input("Enter quote", "Believe in yourself.")
 
-if st.button("Generate Quote Video"):
+if st.button("Generate"):
     if not uploaded_video:
-        st.error("Please upload a video first.")
+        st.error("Please upload a video.")
         st.stop()
 
-    # Save uploaded video to temp file
+    # Save video
     video_path = os.path.join(TEMP_DIR, "input.mp4")
     with open(video_path, "wb") as f:
         f.write(uploaded_video.read())
 
     # Load video
-    clip = VideoFileClip(video_path).resize((W, H)).subclip(0, 6)
+    bg_clip = VideoFileClip(video_path).resize((W, H)).subclip(0, 6)
 
-    # Create text image using Pillow
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
-    img = Image.new("RGB", (W, H), color=(0, 0, 0))
+    # Transparent image for text overlay
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 90)
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    bbox = draw.textbbox((0, 0), quote_text, font=font)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    draw.text(((W - w) // 2, (H - h) // 2), quote_text, font=font, fill="white")
 
-    # Turn it into a clip
-    txt_clip = ImageClip(np.array(img)).set_duration(clip.duration)
+    # Centered text
+    lines = quote_text.split("\n")
+    total_height = sum([draw.textbbox((0, 0), line, font=font)[3] for line in lines])
+    y = (H - total_height) // 2
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        draw.text(((W - w) // 2, y), line, font=font, fill=(255, 255, 255, 255))
+        y += h + 10
 
-    # Composite
-    final = CompositeVideoClip([clip, txt_clip])
+    # Convert to clip
+    txt_clip = (ImageClip(np.array(img), ismask=False)
+                .set_duration(bg_clip.duration)
+                .set_position("center"))
 
-    # Output
+    # Combine
+    final = CompositeVideoClip([bg_clip, txt_clip])
+
+    # Export
     output_path = os.path.join(TEMP_DIR, "output.mp4")
     final.write_videofile(output_path, fps=24, preset="ultrafast")
-    st.success("✅ Video Generated!")
+    st.success("✅ Done!")
     st.video(output_path)
     st.download_button("Download", open(output_path, "rb"), "quote_video.mp4")
