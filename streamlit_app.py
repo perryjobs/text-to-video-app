@@ -3,11 +3,17 @@ import streamlit as st
 from moviepy.editor import *
 import requests, os, io, textwrap, tempfile, numpy as np
 from gtts import gTTS
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, __version__ as PILLOW_VERSION
+
+# ✅ Check Pillow version to avoid crashes
+if int(PILLOW_VERSION.split('.')[0]) < 10:
+    st.error("This app requires Pillow >= 10.0.0. Please upgrade Pillow by running:\n\n`pip install --upgrade Pillow`")
+    st.stop()
 
 # 🩹 Monkey patch to fix MoviePy incompatibility with Pillow >= 10
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 
 # --- Constants ---
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
