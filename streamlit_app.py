@@ -175,7 +175,7 @@ if st.button("Generate Video"):
                 with open(path, "wb") as fp:
                     fp.write(v.read())
         bg_clip = VideoFileClip(path).subclip(0, quote_dur).without_audio()
-                bg_clips.append(
+            bg_clips.append(
             bg_clip.on_color(
         size=(W, H),
         color=(0, 0, 0),
