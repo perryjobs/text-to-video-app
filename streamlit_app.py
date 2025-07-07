@@ -180,8 +180,7 @@ if st.button("Generate Video"):
                 timeline.append(c.set_start(current_start).crossfadein(trans_dur))
             current_start += quote_dur - trans_dur
         video = CompositeVideoClip(timeline, size=(W, H)).set_duration(current_start + trans_dur)
-        )
-
+        
     if music_mode=="Upload" and music_file:
         mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
         bg_audio=AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
