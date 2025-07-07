@@ -63,7 +63,7 @@ def text_frame(size, text, font, color):
         w = draw.textlength(ln, font=font)
         draw.text(((W-w)//2, y), ln, font=font, fill=color)
         y += font.size+10
-    return img
+    return img.convert("RGB")
 
 def typewriter_frames(size, text, font, color, duration):
     chars = list(text)
