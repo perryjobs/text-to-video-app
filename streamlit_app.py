@@ -121,82 +121,21 @@ voice_lang = st.sidebar.selectbox("Voice language",["en","es","fr"],disabled=not
 quotes_raw = st.text_area("Quotes – separate each by blank line",height=250)
 
 if st.button("Generate Video"):
-    quotes = [q.strip() for q in quotes_raw.split("\n\n") if q.strip()]
+    quotes=[q.strip() for q in quotes_raw.split("\n\n") if q.strip()]
     if not quotes:
-        st.error("Provide at least one quote.")
-        st.stop()
-
-    font = ImageFont.truetype(FONT_PATH, font_size)
-
-    # Prepare background clips first
-    bg_clips = []
-
-    if media_type == "Image":
-        imgs_bytes = []
-        if img_src == "Upload":
-            if not img_files:
-                st.error("Upload images.")
-                st.stop()
-            imgs_bytes = [f.read() for f in img_files]
-        else:
-            for _ in range(num_imgs):
-                img = fetch_unsplash(kw)
-                if img:
-                    imgs_bytes.append(img)
-        if not imgs_bytes:
-            st.error("No images fetched.")
-            st.stop()
-        for b in imgs_bytes:
-            img = Image.open(io.BytesIO(b)).convert("RGB").resize((W, H), Image.Resampling.LANCZOS)
-            path = os.path.join(TEMP_DIR, f"bg_{hash(b)}.png")
-            img.save(path)
-            bg_clips.append(ImageClip(path).set_duration(quote_dur))
-    else:
-        vids = []
-        if vid_src == "Upload":
-            if not vid_files:
-                st.error("Upload videos.")
-                st.stop()
-            vids = [f for f in vid_files]
-        else:
-            for _ in range(num_vids):
-                url = fetch_pexels_video(kw)
-                if url:
-                    fname = os.path.join(TEMP_DIR, f"pex_{hash(url)}.mp4")
-                    with open(fname, "wb") as fp:
-                        fp.write(requests.get(url).content)
-                    vids.append(fname)
-        if not vids:
-            st.error("No videos found.")
-            st.stop()
-        for v in vids:
-            path = v if isinstance(v, str) else os.path.join(TEMP_DIR, v.name)
-            if not isinstance(v, str):
-                with open(path, "wb") as fp:
-                    fp.write(v.read())
-        bg_clip = VideoFileClip(path).subclip(0, quote_dur).without_audio()
-        bg_clips.append(
-            bg_clip.on_color(
-        size=(W, H),
-        color=(0, 0, 0),
-        col_opacity=1,
-        pos=("center", "center")
-    )
-)
-
-
-    # Now create clips with text overlay
-            clips = []
-    for i, q in enumerate(quotes):
-        bg = bg_clips[i % len(bg_clips)]
-        txt_clip = animated_text_clip((W, H), q, font, text_color, text_anim, quote_dur)
-        comp = CompositeVideoClip([bg, txt_clip.set_position("center")]).set_duration(quote_dur)
-        if i > 0:
+        st.error("Provide at least one quote."); st.stop()
+    font=ImageFont.truetype(FONT_PATH,font_size)
+    bg_clips=[]
+    for i,q in enumerate(quotes):
+        bg=bg_clips[i % len(bg_clips)].copy()
+        txt_clip=animated_text_clip((W,H), q, font, text_color, text_anim, quote_dur)
+        comp=CompositeVideoClip([bg,txt_clip])
+        if i>0:
             comp = comp.crossfadein(trans_dur)
         clips.append(comp)
 
-    if len(clips) == 1:
-        video = clips[0]
+    video = concatenate_videoclips(clips, method="compose")
+    video = clips[0]
     else:
         timeline = []
         current_start = 0
@@ -206,34 +145,31 @@ if st.button("Generate Video"):
             else:
                 timeline.append(c.set_start(current_start).crossfadein(trans_dur))
             current_start += quote_dur - trans_dur
-        video = CompositeVideoClip(timeline, size=(W, H)).set_duration(current_start + trans_dur)
+        video = concatenate_videoclips(clips, method="compose", padding=-trans_dur, transition=clips[0].crossfadein(trans_dur))
+        
 
-    # Audio handling as before...
-    if music_mode == "Upload" and music_file:
-        mp3_path = os.path.join(TEMP_DIR, "music.mp3")
-        with open(mp3_path, "wb") as f:
-            f.write(music_file.read())
-        bg_audio = AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
-    elif music_mode == "Sample" and sample_choice:
-        bg_audio = AudioFileClip(os.path.join(SAMPLE_MUSIC_DIR, sample_choice)).volumex(0.3).audio_loop(duration=video.duration)
+    if music_mode=="Upload" and music_file:
+        mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
+        bg_audio=AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
+    elif music_mode=="Sample" and sample_choice:
+        bg_audio=AudioFileClip(os.path.join(SAMPLE_MUSIC_DIR,sample_choice)).volumex(0.3).audio_loop(duration=video.duration)
     else:
-        bg_audio = None
+        bg_audio=None
 
     if voiceover:
-        tts_path = os.path.join(TEMP_DIR, "voice.mp3")
-        gTTS(" ".join(quotes), lang=voice_lang).save(tts_path)
-        voice_clip = AudioFileClip(tts_path)
+        tts_path=os.path.join(TEMP_DIR,"voice.mp3"); gTTS(" ".join(quotes),lang=voice_lang).save(tts_path)
+        voice_clip=AudioFileClip(tts_path)
         if voice_clip.duration < video.duration:
-            voice_clip = voice_clip.audio_loop(duration=video.duration)
-        final_audio = CompositeAudioClip([voice_clip, bg_audio]) if bg_audio else voice_clip
+            voice_clip=voice_clip.audio_loop(duration=video.duration)
+        final_audio=CompositeAudioClip([voice_clip, bg_audio]) if bg_audio else voice_clip
     else:
-        final_audio = bg_audio
+        final_audio=bg_audio
 
     if final_audio:
-        video = video.set_audio(final_audio)
+        video=video.set_audio(final_audio)
 
-    out = os.path.join(TEMP_DIR, "final.mp4")
-    video.write_videofile(out, fps=24, preset="ultrafast")
+    out=os.path.join(TEMP_DIR,"final.mp4")
+    video.write_videofile(out,fps=24,preset="ultrafast")
     st.success("Done!")
     st.video(out)
-    st.download_button("Download", open(out, "rb"), "video.mp4")
+    st.download_button("Download",open(out,"rb"),"video.mp4")
