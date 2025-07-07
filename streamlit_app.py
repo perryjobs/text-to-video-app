@@ -50,21 +50,21 @@ def text_frame(size, text, font, color):
     return img
 
 def typewriter_frames(size, text, font, color, duration):
-    frames = []
     chars = list(text)
     total_frames = int(duration * 24)
-    for i in range(len(chars)+1):
+    def make_frame(t):
+        i = min(int(len(chars) * t / duration), len(chars))
+        partial = ''.join(chars[:i])
         img = Image.new("RGBA", size, (0,0,0,0))
         draw = ImageDraw.Draw(img)
-        txt = ''.join(chars[:i])
-        lines = wrap_lines(txt, draw, font, size[0]-80)
-        y = (size[1] - len(lines)*(font.size+10))//2
+        lines = wrap_lines(partial, draw, font, size[0]-80)
+        y = size[1] - len(lines)*(font.size+10) - 40
         for ln in lines:
             w = draw.textlength(ln, font=font)
             draw.text(((size[0]-w)//2, y), ln, font=font, fill=color)
             y += font.size+10
-        frames.append(np.array(img))
-    return ImageSequenceClip(frames, fps=24).set_duration(duration)
+        return np.array(img)
+    return VideoClip(make_frame=make_frame, duration=duration).set_position(("center","bottom"))
 
 def animated_text_clip(size, text, font, color, mode, duration):
     if mode == "Typewriter":
@@ -179,8 +179,9 @@ if st.button("Generate Video"):
             else:
                 timeline.append(c.set_start(current_start).crossfadein(trans_dur))
             current_start += quote_dur - trans_dur
-        video = CompositeVideoClip(timeline, size=(W, H)).set_duration(current_start + trans_dur)
-        
+        video = concatenate_videoclips(clips, method="compose", padding=-trans_dur, transition=clips[0].crossfadein(trans_dur))
+        )
+
     if music_mode=="Upload" and music_file:
         mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
         bg_audio=AudioFileClip(mp3_path).volumex(0.3).audio_loop(duration=video.duration)
