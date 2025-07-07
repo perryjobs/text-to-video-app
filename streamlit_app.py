@@ -5,6 +5,12 @@ import requests, os, io, textwrap, tempfile, numpy as np
 from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFont, __version__ as PILLOW_VERSION
 
+def safe_imageclip(image, duration):
+    """Convert image to RGB if needed and return ImageClip."""
+    if image.mode == "RGBA":
+        image = image.convert("RGB")
+    return ImageClip(np.array(image)).set_duration(duration)
+
 # ✅ Check Pillow version to avoid crashes
 if int(PILLOW_VERSION.split('.')[0]) < 10:
     st.error("This app requires Pillow >= 10.0.0. Please upgrade Pillow by running:\n\n`pip install --upgrade Pillow`")
