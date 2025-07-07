@@ -37,7 +37,10 @@ if st.button("Generate Video") and video_file and quote_text:
         partial = quote_text[:chars] if text_anim == "Typewriter" else quote_text
         img = Image.new("RGBA", (720, 1280), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
-        w, h = draw.textsize(partial, font=font)
+        bbox = draw.textbbox((0, 0), partial, font=font)
+w = bbox[2] - bbox[0]
+h = bbox[3] - bbox[1]
+
         draw.text(((720 - w) // 2, (1280 - h) // 2), partial, font=font, fill=font_color)
         return np.array(img.convert("RGB"))
 
