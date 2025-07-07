@@ -140,7 +140,7 @@ if st.button("Generate Video"):
         timeline = []
         current_start = 0
     for idx, c in enumerate(clips):
-    if idx == 0:
+        if idx == 0:
             timeline.append(c.set_start(current_start))
     else:
             timeline.append(c.set_start(current_start).crossfadein(trans_dur))
