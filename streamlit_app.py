@@ -159,12 +159,13 @@ if st.button("Generate Video"):
             path=v if isinstance(v,str) else os.path.join(TEMP_DIR,v.name)
             if not isinstance(v,str):
                 with open(path,"wb") as fp: fp.write(v.read())
-            bg_clips.append(VideoFileClip(path).subclip(0, quote_dur).without_audio())
+            bg_clip = VideoFileClip(path).subclip(0, quote_dur).without_audio()
+            bg_clips.append(bg_clip.on_color(size=(W, H), color=(0, 0, 0), col_opacity=1, pos=("center","center")))
 
     clips=[]
     for i,q in enumerate(quotes):
         bg=bg_clips[i % len(bg_clips)].copy()
-        txt_clip=animated_text_clip((W,H),q,font,text_color,text_anim,quote_dur)
+        txt_clip=animated_text_clip((W,H), q, font, text_color, text_anim, quote_dur)
         comp=CompositeVideoClip([bg,txt_clip.set_position("center")])
         clips.append(comp)
 
@@ -180,7 +181,7 @@ if st.button("Generate Video"):
                 timeline.append(c.set_start(current_start).crossfadein(trans_dur))
             current_start += quote_dur - trans_dur
         video = concatenate_videoclips(clips, method="compose", padding=-trans_dur, transition=clips[0].crossfadein(trans_dur))
-        
+        )
 
     if music_mode=="Upload" and music_file:
         mp3_path=os.path.join(TEMP_DIR,"music.mp3"); open(mp3_path,"wb").write(music_file.read())
