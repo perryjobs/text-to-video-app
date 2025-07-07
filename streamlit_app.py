@@ -2,7 +2,7 @@
 import streamlit as st
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
-import requests, os, io, textwrap, tempfile
+import requests, os, io, textwrap, tempfile, numpy as np
 from gtts import gTTS
 
 # --- Constants ---
@@ -53,7 +53,8 @@ def text_frame(size, text, font, color):
 
 def animated_text_clip(size, text, font, color, mode, duration):
     base_img = text_frame(size, text, font, color)
-    base_clip = ImageClip(base_img).set_duration(duration)
+    # Convert PIL image to NumPy array for MoviePy
+    base_clip = ImageClip(np.array(base_img)).set_duration(duration)(base_img).set_duration(duration)
     if mode == "Typewriter":
         return base_clip.crop(x1=lambda t: 0, x2=lambda t: base_img.width*(t/duration))
     elif mode == "Ascend":
