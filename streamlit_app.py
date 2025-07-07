@@ -56,5 +56,14 @@ if st.button("Generate"):
     output_path = os.path.join(TEMP_DIR, "output.mp4")
     final.write_videofile(output_path, fps=24, preset="ultrafast")
     st.success("✅ Done!")
-    st.video(output_path)
+    st.video(out, format="video/mp4", start_time=0)
+    st.markdown(
+    f"""
+    <video width="360" height="640" controls autoplay loop muted>
+        <source src="data:video/mp4;base64,{base64.b64encode(open(out, 'rb').read()).decode()}" type="video/mp4">
+    </video>
+    """,
+    unsafe_allow_html=True
+)
+
     st.download_button("Download", open(output_path, "rb"), "quote_video.mp4")
