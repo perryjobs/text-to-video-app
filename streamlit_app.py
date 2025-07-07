@@ -40,7 +40,7 @@ def wrap_lines(text, draw, font, max_w):
 
 def text_frame(size, text, font, color):
     W, H = size
-    img = Image.new("RGBA", size, (0,0,0,0)); draw = ImageDraw.Draw(img)
+    img = Image.new("RGB", size, (0, 0, 0)); draw = ImageDraw.Draw(img)
     lines = wrap_lines(text, draw, font, W-80)
     y = (H - len(lines)*(font.size+10))//2
     for ln in lines:
@@ -55,7 +55,7 @@ def typewriter_frames(size, text, font, color, duration):
     def make_frame(t):
         i = min(int(len(chars) * t / duration), len(chars))
         partial = ''.join(chars[:i])
-        img = Image.new("RGBA", size, (0,0,0,0))
+        img = Image.new("RGB", size, (0, 0, 0))
         draw = ImageDraw.Draw(img)
         lines = wrap_lines(partial, draw, font, size[0]-80)
         y = size[1] - len(lines)*(font.size+10) - 40
