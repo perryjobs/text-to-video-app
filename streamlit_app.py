@@ -47,7 +47,7 @@ def text_frame(size, text, font, color):
         w = draw.textlength(ln, font=font)
         draw.text(((W-w)//2, y), ln, font=font, fill=color)
         y += font.size+10
-    return img
+    return img.convert("RGB")
 
 def typewriter_frames(size, text, font, color, duration):
     chars = list(text)
@@ -63,7 +63,7 @@ def typewriter_frames(size, text, font, color, duration):
             w = draw.textlength(ln, font=font)
             draw.text(((size[0]-w)//2, y), ln, font=font, fill=color)
             y += font.size+10
-        return np.array(img)
+        return np.array(img.convert("RGB"))
     return VideoClip(make_frame=make_frame, duration=duration).set_position(("center","bottom"))
 
 def animated_text_clip(size, text, font, color, mode, duration):
