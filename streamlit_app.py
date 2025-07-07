@@ -53,14 +53,15 @@ def text_frame(size, text, font, color):
 
 def animated_text_clip(size, text, font, color, mode, duration):
     base_img = text_frame(size, text, font, color)
-    # Convert PIL image to NumPy array for MoviePy
     base_clip = ImageClip(np.array(base_img)).set_duration(duration)
+
     if mode == "Typewriter":
-        return base_clip.crop(x1=lambda t: 0, x2=lambda t: base_img.width*(t/duration))
+        # Reveal horizontally like a typewriter
+        return base_clip.fl(lambda gf, t: gf(t)[:, : int(size[0] * (t / duration))], apply_to=["mask"]).set_position("center")
     elif mode == "Ascend":
-        return base_clip.set_position(lambda t: ("center", size[1]*(1-t/duration)-base_img.height/2))
+        return base_clip.set_position(lambda t: ("center", size[1] * (1 - t / duration) - base_img.height / 2))
     elif mode == "Shift":
-        return base_clip.set_position(lambda t: (size[0]*(1-t/duration)-base_img.width/2, "center"))
+        return base_clip.set_position(lambda t: (size[0] * (1 - t / duration) - base_img.width / 2, "center"))
     else:
         return base_clip.set_position("center")
 
