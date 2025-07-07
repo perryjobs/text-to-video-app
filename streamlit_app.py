@@ -145,7 +145,7 @@ if st.button("Generate Video"):
                 f.write(requests.get(vid_url).content)
 
         base_vid = VideoFileClip(vid_path).without_audio()
-            base_vid_w, base_vid_h = base_vid.size  # keep original dimensions; avoids Pillow ANTIALIAS bug
+        base_vid_w, base_vid_h = base_vid.size  # keep original dimensions; avoids Pillow ANTIALIAS bug
         for quote in quotes:
             overlay_path = render_text_image((int(base_vid_w), int(base_vid_h)), quote, font, text_color)
             txt_clip = ImageClip(overlay_path).set_duration(duration).set_position("center")
