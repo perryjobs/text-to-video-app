@@ -87,7 +87,7 @@ if st.button("Generate Video"):
         line_heights = [
         draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
     for line in wrapped_lines
-]
+        ]
         total_height = sum(line_heights) + (len(wrapped_lines) - 1) * 10
         y = (H - total_height) // 2
 
