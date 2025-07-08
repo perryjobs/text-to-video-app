@@ -1,13 +1,13 @@
 import streamlit as st
 from moviepy.editor import *
-from PIL import Image, ImageDraw, ImageFont, ImageColor
+from PIL import Image, ImageDraw, ImageFont, ImageColor, __version__ as PILLOW_VERSION
 import numpy as np
 import tempfile
 import os
 import textwrap
 import base64
 
-# ✅ Patch for Pillow >=10
+# ✅ Monkey patch for Pillow >=10
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
@@ -30,62 +30,69 @@ text_effect = st.selectbox("Text Animation", ["Static", "Fade In", "Typewriter"]
 # --- Helper: wrap text lines ---
 def wrap_text(text, font, max_chars=25):
     lines = []
-    for para in text.splitlines():
-        lines.extend(textwrap.wrap(para, width=max_chars))
+    for line in text.splitlines():
+        lines.extend(textwrap.wrap(line, width=max_chars))
     return lines
 
-# --- Typewriter effect ---
+# --- Helper: Typewriter animation ---
 def typewriter_clip(text, font, color, duration):
     chars = list(text)
-
     def make_frame(t):
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         n_chars = min(int(len(chars) * (t / duration)), len(chars))
         partial = ''.join(chars[:n_chars])
         lines = wrap_text(partial, font)
-        total_height = sum([font.getbbox(line)[3] for line in lines]) + (len(lines) - 1) * 10
+        line_heights = [font.getbbox(line)[3] for line in lines]
+        total_height = sum(line_heights) + (len(lines) - 1) * 10
         y = (H - total_height) // 2
         for line in lines:
             w = draw.textlength(line, font=font)
             draw.text(((W - w) // 2, y), line, font=font, fill=color)
             y += font.getbbox(line)[3] + 10
         return np.array(img.convert("RGB"))
-
     return VideoClip(make_frame, duration=duration)
 
-# --- Generate Video ---
+# --- Action ---
 if st.button("Generate Video"):
     if not uploaded_video:
         st.error("Please upload a video.")
         st.stop()
 
-    # Save and load video
+    # Save uploaded video
     video_path = os.path.join(TEMP_DIR, "input.mp4")
     with open(video_path, "wb") as f:
         f.write(uploaded_video.read())
 
+    # Load & resize video
     bg_clip = VideoFileClip(video_path).resize((W, H)).subclip(0, duration_limit)
 
+    # Load font
     font = ImageFont.truetype(FONT_PATH, font_size)
     color_rgb = ImageColor.getrgb(text_color)
     color_rgba = color_rgb + (255,)
 
     if text_effect == "Typewriter":
-        txt_clip = typewriter_clip(quote_text, font, color_rgb, bg_clip.duration)
+        txt_clip = typewriter_clip(quote_text, font, color_rgb, bg_clip.duration).set_position("center")
+
     else:
-        # Create static/fade text image
+        # Create transparent RGBA image
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
-        wrapped = wrap_text(quote_text, font)
-        line_heights = [font.getbbox(line)[3] for line in wrapped]
-        total_height = sum(line_heights) + (len(wrapped) - 1) * 10
+        wrapped_lines = wrap_text(quote_text, font)
+
+        line_heights = [
+            draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
+            for line in wrapped_lines
+        ]
+        total_height = sum(line_heights) + (len(wrapped_lines) - 1) * 10
         y = (H - total_height) // 2
 
-        for line in wrapped:
+        for line in wrapped_lines:
             w = draw.textlength(line, font=font)
+            h = draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
             draw.text(((W - w) // 2, y), line, font=font, fill=color_rgba)
-            y += font.getbbox(line)[3] + 10
+            y += h + 10
 
         np_img = np.array(img.convert("RGB"))
         txt_clip = ImageClip(np_img).set_duration(bg_clip.duration).set_position("center")
@@ -93,19 +100,22 @@ if st.button("Generate Video"):
         if text_effect == "Fade In":
             txt_clip = txt_clip.fadein(1.0)
 
-    # Final composition
     final = CompositeVideoClip([bg_clip, txt_clip])
-    output_path = os.path.join(TEMP_DIR, "final.mp4")
-    final.write_videofile(output_path, fps=24, preset="ultrafast")
+
+    # Export
+    out = os.path.join(TEMP_DIR, "final.mp4")
+    final.write_videofile(out, fps=24, preset="ultrafast")
 
     st.success("✅ Done!")
-    video_bytes = open(output_path, "rb").read()
-    encoded = base64.b64encode(video_bytes).decode()
 
+    # --- Video Preview & Download ---
+    video_bytes = open(out, "rb").read()
+    encoded_video = base64.b64encode(video_bytes).decode()
     st.markdown(
         f"""
         <video controls style="width: 360px; height: 640px; border-radius: 12px;">
-            <source src="data:video/mp4;base64,{encoded}" type="video/mp4">
+            <source src="data:video/mp4;base64,{encoded_video}" type="video/mp4">
+            Your browser does not support the video tag.
         </video>
         """,
         unsafe_allow_html=True,
