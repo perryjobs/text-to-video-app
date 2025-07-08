@@ -68,8 +68,16 @@ if st.button("Generate Video"):
     color_rgba = ImageColor.getrgb(text_color) + (255,)
 
     # Generate text clip based on animation type
+
+    from PIL import ImageColor
+
+    # Before animation switch
+    color_rgb = ImageColor.getrgb(text_color)
+    color_rgba = color_rgb + (255,)
+
     if text_effect == "Typewriter":
         txt_clip = typewriter_clip(quote_text, font, color_rgb, bg_clip.duration)
+
     else:
         # Create transparent image with wrapped text
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
