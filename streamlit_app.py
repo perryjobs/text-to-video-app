@@ -1,67 +1,77 @@
+import streamlit as st
+from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
 from PIL import Image, ImageDraw, ImageFont, ImageColor
+import numpy as np
+import os, tempfile, textwrap
+
+# Patch for Pillow >=10
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
-import streamlit as st
-from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
-import numpy as np, tempfile, os, base64, textwrap
-
+# Constants
 W, H = 1080, 1920
-TMP = tempfile.mkdtemp()
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-st.title("Debugging Quote Maker")
+st.title("Quote Video Maker")
 
-vid = st.file_uploader("Upload MP4", type="mp4")
-txt = st.text_area("Quote", "HELLO WORLD", height=100)
-clr = st.color_picker("Color", "#FFFFFF")
-dur = st.slider("Duration", 3, 10, 5)
-fx = st.selectbox("Effect", ["Static", "Fade In", "Typewriter"])
+# UI
+uploaded_file = st.file_uploader("Upload a vertical MP4 video", type="mp4")
+quote_text = st.text_area("Enter your quote:", "This is a sample quote.", height=100)
+text_color = st.color_picker("Choose text color:", "#FFFFFF")
+text_effect = st.selectbox("Select text animation:", ["Static", "Fade In", "Typewriter"])
 
-if st.button("Run"):
-    if not vid:
-        st.error("Upload a video"); st.stop()
+if uploaded_file and st.button("Generate Video"):
+    # Save uploaded video to temp
+    temp_dir = tempfile.mkdtemp()
+    video_path = os.path.join(temp_dir, "input_video.mp4")
+    with open(video_path, "wb") as f:
+        f.write(uploaded_file.read())
 
-    # Save and load video
-    path = os.path.join(TMP, "in.mp4")
-    open(path, "wb").write(vid.read())
-    clip = VideoFileClip(path).subclip(0, dur).resize((W, H))
-    st.write("✅ Video load OK:", clip.duration, clip.size)
+    try:
+        bg_clip = VideoFileClip(video_path).resize((W, H)).subclip(0, 8)
 
-    font = ImageFont.truetype(FONT, 80)
-    rgb = ImageColor.getrgb(clr)
+        # Load font
+        font = ImageFont.truetype(FONT_PATH, 80)
+        color_rgb = ImageColor.getrgb(text_color)
 
-    def wrap(t): return textwrap.wrap(t, width=25)
+        def make_text_image(text):
+            img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            lines = textwrap.wrap(text, width=25)
+            total_height = sum([draw.textbbox((0, 0), line, font=font)[3] for line in lines]) + 20 * len(lines)
+            y = (H - total_height) // 2
+            for line in lines:
+                w = draw.textlength(line, font=font)
+                draw.text(((W - w) // 2, y), line, font=font, fill=color_rgb)
+                y += font.size + 20
+            return np.array(img)
 
-    def render_img(lines):
-        img = Image.new("RGB", (W, H), (0, 0, 0))
-        d = ImageDraw.Draw(img)
-        lh = font.getbbox("A")[3] + 10
-        y = (H - len(lines)*lh)//2
-        for l in lines:
-            w = d.textlength(l, font=font)
-            d.text(((W-w)//2, y), l, fill=rgb, font=font)
-            y += lh
-        return np.array(img)
+        if text_effect == "Static":
+            txt_img = make_text_image(quote_text)
+            txt_clip = ImageClip(txt_img).set_duration(bg_clip.duration)
 
-    if fx == "Typewriter":
-        # Only test first frame
-        arr0 = render_img(wrap(txt[:1]))
-        st.image(arr0)
-        txt_clip = ImageClip(arr0).set_duration(1).set_position("center")
-    else:
-        arr = render_img(wrap(txt))
-        st.image(arr)
-        txt_clip = ImageClip(arr).set_duration(dur).set_position("center")
-        if fx == "Fade In":
-            txt_clip = txt_clip.fadein(1)
+        elif text_effect == "Fade In":
+            txt_img = make_text_image(quote_text)
+            txt_clip = ImageClip(txt_img).set_duration(bg_clip.duration).fadein(1)
 
-    st.write("✅ Text creation OK")
+        elif text_effect == "Typewriter":
+            clips = []
+            for i in range(1, len(quote_text) + 1):
+                img_array = make_text_image(quote_text[:i])
+                c = ImageClip(img_array).set_duration(0.1)
+                clips.append(c)
+            txt_clip = CompositeVideoClip(clips).set_duration(bg_clip.duration)
 
-    final = CompositeVideoClip([clip, txt_clip])
-    out = os.path.join(TMP, "out.mp4")
-    final.write_videofile(out, fps=24, codec="libx264")
-    st.success("Done")
-    data = open(out, "rb").read()
-    st.video(data)
-    st.download_button("Download", data, "v.mp4")
+        txt_clip = txt_clip.set_position("center")
+
+        final = CompositeVideoClip([bg_clip, txt_clip])
+
+        output_path = os.path.join(temp_dir, "output.mp4")
+        final.write_videofile(output_path, fps=24, codec="libx264")
+
+        st.video(output_path)
+        with open(output_path, "rb") as f:
+            st.download_button("Download Video", f, file_name="quote_video.mp4")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
