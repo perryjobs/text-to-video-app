@@ -71,8 +71,8 @@ if st.button("Generate Video"):
     final = CompositeVideoClip([bg_clip, txt_clip])
 
     # Export
-    output_path = os.path.join(TEMP_DIR, "output.mp4")
-    final.write_videofile(output_path, fps=24, preset="ultrafast")
+    out = os.path.join(TEMP_DIR, "final.mp4")
+    video.write_videofile(out, fps=24, preset="ultrafast")
 
     st.success("✅ Done!")
     # --- Video Preview & Download ---
