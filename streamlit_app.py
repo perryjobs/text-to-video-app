@@ -1,58 +1,85 @@
 import streamlit as st
-import subprocess
-import tempfile
 import os
+import textwrap
+import tempfile
+from moviepy.editor import *
+from PIL import Image, ImageDraw, ImageFont
+from gtts import gTTS
+import numpy as np
 
-# App Title
-st.title("Quote Video Generator with FFmpeg")
+# Monkey patch for Pillow >=10
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
 
-# Upload background video
-bg_video = st.file_uploader("Upload a background video (MP4, vertical format)", type=["mp4"])
-quote = st.text_input("Enter a short quote")
+st.set_page_config(layout="wide", page_title="Quote Video Maker")
 
+# Utility: Convert hex color to RGB
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+# Utility: Create a frame with text using PIL
+def create_text_frame(text, font_path, font_size, text_color, size=(1080, 1920)):
+    img = Image.new("RGBA", size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype(font_path, font_size)
+    wrapped = textwrap.fill(text, width=20)
+    text_w, text_h = draw.multiline_textsize(wrapped, font=font)
+    pos = ((size[0] - text_w) // 2, (size[1] - text_h) // 2)
+    draw.multiline_text(pos, wrapped, font=font, fill=text_color, align="center")
+    return np.array(img)
+
+# Animation types
+def static_clip(text, font, color_rgb, duration, size=(1080, 1920)):
+    def make_frame(t):
+        return create_text_frame(text, font, 90, color_rgb, size)
+    return VideoClip(make_frame, duration=duration)
+
+def typewriter_clip(text, font, color_rgb, duration, size=(1080, 1920)):
+    def make_frame(t):
+        chars = int(len(text) * (t / duration))
+        return create_text_frame(text[:chars], font, 90, color_rgb, size)
+    return VideoClip(make_frame, duration=duration)
+
+def fadein_clip(text, font, color_rgb, duration, size=(1080, 1920)):
+    def make_frame(t):
+        alpha = min(t / 1.5, 1)
+        rgba_color = tuple(int(c * alpha) for c in color_rgb) + (int(255 * alpha),)
+        return create_text_frame(text, font, 90, rgba_color[:3], size)
+    return VideoClip(make_frame, duration=duration)
+
+# UI
+st.title("🎬 Quote Video Maker")
+quote_text = st.text_area("✍️ Enter your quote:", "Believe in yourself. You're stronger than you think.")
+font_size = 90
+font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+font_color = st.color_picker("🖌️ Choose font color", "#FFFFFF")
+animation = st.selectbox("🎞️ Select text animation", ["static", "typewriter", "fade in"])
+video_file = st.file_uploader("📹 Upload vertical video (1080x1920)", type=["mp4", "mov", "webm"])
 generate = st.button("Generate Video")
 
-if bg_video and quote and generate:
+# Processing
+if generate and video_file:
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Save uploaded video
-        bg_path = os.path.join(tmpdir, "background.mp4")
+        bg_path = os.path.join(tmpdir, "bg.mp4")
         with open(bg_path, "wb") as f:
-            f.write(bg_video.read())
+            f.write(video_file.read())
 
-        # Create transparent text video
-        text_path = os.path.join(tmpdir, "text.mp4")
-        text_cmd = [
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "color=color=black@0.0:s=1080x1920:d=6",
-            "-vf",
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='{quote}':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=(h-text_h)/2",
-            "-c:v", "libx264", "-pix_fmt", "yuva420p", "-t", "6",
-            text_path
-        ]
+        bg_clip = VideoFileClip(bg_path).resize((1080, 1920)).without_audio()
+        duration = min(bg_clip.duration, 6)
+        color_rgb = hex_to_rgb(font_color)
 
-        st.info("Generating transparent text video...")
-        result = subprocess.run(text_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            st.error(f"FFmpeg text video generation failed:\n{result.stderr}")
-            st.stop()
+        if animation == "static":
+            txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
+        elif animation == "typewriter":
+            txt_clip = typewriter_clip(quote_text, font_path, color_rgb, duration)
+        elif animation == "fade in":
+            txt_clip = fadein_clip(quote_text, font_path, color_rgb, duration)
 
-        # Overlay text video onto background
-        final_path = os.path.join(tmpdir, "final.mp4")
-        overlay_cmd = [
-            "ffmpeg", "-y",
-            "-i", bg_path,
-            "-i", text_path,
-            "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
-            "-c:v", "libx264", "-c:a", "copy",
-            final_path
-        ]
+        final = CompositeVideoClip([bg_clip, txt_clip.set_position("center")]).set_duration(duration)
 
-        st.info("Overlaying text onto background video...")
-        result = subprocess.run(overlay_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            st.error(f"FFmpeg overlay failed:\n{result.stderr}")
-            st.stop()
+        output_path = os.path.join(tmpdir, "output.mp4")
+        final.write_videofile(output_path, fps=24, codec='libx264', preset="fast", audio=False)
 
-        # Show result
-        st.success("Here is your final video:")
-        st.video(final_path)
+        st.video(output_path)
+        st.success("✅ Video created successfully!")
