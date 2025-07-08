@@ -1,4 +1,5 @@
 streamlit
-Pillow
+moviepy
 numpy
-ffmpeg-python
+gTTS
+pillow
