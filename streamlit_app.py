@@ -77,9 +77,9 @@ if st.button("Generate Video"):
 
     st.success("✅ Done!")
     # --- Video Preview & Download ---
-        video_bytes = open(out, "rb").read()
-        encoded_video = base64.b64encode(video_bytes).decode()
-        st.markdown(
+    video_bytes = open(out, "rb").read()
+    encoded_video = base64.b64encode(video_bytes).decode()
+    st.markdown(
             f"""
             <video controls style="width: 360px; height: 640px; border-radius: 12px;">
                 <source src="data:video/mp4;base64,{encoded_video}" type="video/mp4">
