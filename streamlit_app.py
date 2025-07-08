@@ -1,6 +1,11 @@
+from PIL import Image, ImageDraw, ImageFont, ImageColor
+
+# ✅ Monkey patch for Pillow >= 10 (Image.ANTIALIAS removed)
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 import streamlit as st
 from moviepy.editor import *
-from PIL import Image, ImageDraw, ImageFont, ImageColor
 import numpy as np
 import tempfile
 import os
@@ -24,22 +29,22 @@ duration_limit = st.slider("Clip Duration (seconds)", 3, 15, 6)
 text_effect = st.selectbox("Text Animation", ["Static", "Fade In", "Typewriter"])
 
 # --- Helper: wrap text lines ---
-def wrap_text(text, max_chars=25):
+def wrap_text(text, draw, font, max_chars=25):
     wrapped = []
     for line in text.splitlines():
         wrapped.extend(textwrap.wrap(line, width=max_chars))
     return wrapped
 
-# --- Helper: Typewriter Animation ---
+# --- Helper: Typewriter animation ---
 def typewriter_clip(text, font, color, duration):
     chars = list(text)
-    wrapped_lines = wrap_text(text)
+
     def make_frame(t):
         img = Image.new("RGB", (W, H), (0, 0, 0))
         draw = ImageDraw.Draw(img)
         n_chars = min(int(len(chars) * (t / duration)), len(chars))
         partial = ''.join(chars[:n_chars])
-        lines = wrap_text(partial)
+        lines = wrap_text(partial, draw, font)
         line_heights = [font.getbbox(line)[3] for line in lines]
         total_height = sum(line_heights) + (len(lines) - 1) * 10
         y = (H - total_height) // 2
@@ -48,6 +53,7 @@ def typewriter_clip(text, font, color, duration):
             draw.text(((W - w) // 2, y), line, font=font, fill=color)
             y += font.getbbox(line)[3] + 10
         return np.array(img)
+
     return VideoClip(make_frame, duration=duration)
 
 # --- Action ---
@@ -62,22 +68,26 @@ if st.button("Generate Video"):
         f.write(uploaded_video.read())
 
     # Load & resize video
-    bg_clip = VideoFileClip(video_path).resize((W, H)).subclip(0, duration_limit)
+    bg_clip = VideoFileClip(video_path).subclip(0, duration_limit).resize((W, H))
 
-    # Load font and color
+    # Load font & color
     font = ImageFont.truetype(FONT_PATH, font_size)
     color_rgb = ImageColor.getrgb(text_color)
     color_rgba = color_rgb + (255,)
 
+    # Generate text clip
     if text_effect == "Typewriter":
         txt_clip = typewriter_clip(quote_text, font, color_rgb, bg_clip.duration)
+
     else:
         # Create transparent RGBA image
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
-        wrapped_lines = wrap_text(quote_text)
-
-        line_heights = [draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] for line in wrapped_lines]
+        wrapped_lines = wrap_text(quote_text, draw, font)
+        line_heights = [
+            draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
+            for line in wrapped_lines
+        ]
         total_height = sum(line_heights) + (len(wrapped_lines) - 1) * 10
         y = (H - total_height) // 2
 
@@ -87,7 +97,7 @@ if st.button("Generate Video"):
             draw.text(((W - w) // 2, y), line, font=font, fill=color_rgba)
             y += h + 10
 
-        # Convert to RGB
+        # Convert to RGB for MoviePy
         np_img = np.array(img.convert("RGB"))
         txt_clip = ImageClip(np_img).set_duration(bg_clip.duration).set_position("center")
 
