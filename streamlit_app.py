@@ -79,30 +79,30 @@ if st.button("Generate Video"):
         txt_clip = typewriter_clip(quote_text, font, color_rgb, bg_clip.duration)
 
     else:
-        # Create transparent image with wrapped text
+        # Create transparent RGBA image
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         wrapped_lines = wrap_text(quote_text, draw, font)
 
         line_heights = [
-            draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
-            for line in wrapped_lines
-        ]
+        draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
+    for line in wrapped_lines
+]
         total_height = sum(line_heights) + (len(wrapped_lines) - 1) * 10
         y = (H - total_height) // 2
 
-        for line in wrapped_lines:
-            w = draw.textlength(line, font=font)
-            h = draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
-            draw.text(((W - w) // 2, y), line, font=font, fill=color_rgb)
-            y += h + 10
+for line in wrapped_lines:
+    w = draw.textlength(line, font=font)
+    h = draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
+    draw.text(((W - w) // 2, y), line, font=font, fill=color_rgba)
+    y += h + 10
 
-        txt_clip = (ImageClip(np.array(img.convert("RGB")))
-                    .set_duration(bg_clip.duration)
-                    .set_position("center"))
+# ✅ Convert to RGB for MoviePy
+    np_img = np.array(img.convert("RGB"))
 
-        if text_effect == "Fade In":
-            txt_clip = txt_clip.fadein(1.0)
+    txt_clip = ImageClip(np_img).set_duration(bg_clip.duration).set_position("center")
+if text_effect == "Fade In":
+    txt_clip = txt_clip.fadein(1.0)
 
     # Combine video + text
     final = CompositeVideoClip([bg_clip, txt_clip])
