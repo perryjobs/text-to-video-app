@@ -1,6 +1,6 @@
 import streamlit as st
 from moviepy.editor import *
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageColor
 import numpy as np
 import tempfile
 import os
