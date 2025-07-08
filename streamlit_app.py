@@ -5,6 +5,7 @@ import numpy as np
 import tempfile
 import os
 import textwrap
+import base64
 
 # --- Constants ---
 W, H = 1080, 1920
