@@ -65,7 +65,7 @@ if st.button("Generate Video"):
 
     # Load font
     font = ImageFont.truetype(FONT_PATH, font_size)
-    color_rgb = ImageColor.getrgb(text_color)
+    color_rgba = ImageColor.getrgb(text_color) + (255,)
 
     # Generate text clip based on animation type
     if text_effect == "Typewriter":
