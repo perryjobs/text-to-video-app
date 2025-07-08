@@ -76,16 +76,17 @@ if st.button("Generate Video"):
     final.write_videofile(out, fps=24, preset="ultrafast")
 
     st.success("✅ Done!")
+
     # --- Video Preview & Download ---
     video_bytes = open(out, "rb").read()
     encoded_video = base64.b64encode(video_bytes).decode()
     st.markdown(
-            f"""
-            <video controls style="width: 360px; height: 640px; border-radius: 12px;">
-                <source src="data:video/mp4;base64,{encoded_video}" type="video/mp4">
-                Your browser does not support the video tag.
-            </video>
-            """,
-            unsafe_allow_html=True,
-        )
+        f"""
+        <video controls style="width: 360px; height: 640px; border-radius: 12px;">
+            <source src="data:video/mp4;base64,{encoded_video}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        """,
+        unsafe_allow_html=True,
+    )
     st.download_button("📥 Download Video", video_bytes, "quote_video.mp4")
