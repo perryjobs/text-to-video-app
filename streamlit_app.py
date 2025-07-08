@@ -1,119 +1,67 @@
-import streamlit as st
-from moviepy.editor import *
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageColor
-
-import tempfile, os, base64, textwrap
-
-# ✅ Fix for Pillow >=10
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
-# --- Constants ---
+import streamlit as st
+from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
+import numpy as np, tempfile, os, base64, textwrap
+
 W, H = 1080, 1920
-TEMP_DIR = tempfile.mkdtemp()
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+TMP = tempfile.mkdtemp()
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-# --- Streamlit UI ---
-st.set_page_config(layout="wide")
-st.title("🎬 Quote Video Maker – No More Black Screens")
+st.title("Debugging Quote Maker")
 
-uploaded_video = st.file_uploader("Upload vertical MP4 video", type=["mp4"])
-quote_text = st.text_area("Enter your quote", "God is within her, she will not fall.", height=200)
-font_size = st.slider("Font Size", 40, 120, 90)
-text_color = st.color_picker("Text Color", "#FFFFFF")
-duration_limit = st.slider("Clip Duration (seconds)", 3, 15, 6)
-text_effect = st.selectbox("Text Animation", ["Static", "Fade In", "Typewriter"])
+vid = st.file_uploader("Upload MP4", type="mp4")
+txt = st.text_area("Quote", "HELLO WORLD", height=100)
+clr = st.color_picker("Color", "#FFFFFF")
+dur = st.slider("Duration", 3, 10, 5)
+fx = st.selectbox("Effect", ["Static", "Fade In", "Typewriter"])
 
-# --- Text Wrap ---
-def wrap_text(text, font, max_chars=25):
-    lines = []
-    for line in text.splitlines():
-        lines += textwrap.wrap(line, width=max_chars)
-    return lines
+if st.button("Run"):
+    if not vid:
+        st.error("Upload a video"); st.stop()
 
-# --- Typewriter TextClip ---
-def typewriter_clip(text, font, color, duration):
-    chars = list(text)
+    # Save and load video
+    path = os.path.join(TMP, "in.mp4")
+    open(path, "wb").write(vid.read())
+    clip = VideoFileClip(path).subclip(0, dur).resize((W, H))
+    st.write("✅ Video load OK:", clip.duration, clip.size)
 
-    def make_frame(t):
-        img = Image.new("RGB", (W, H), (0, 0, 0))  # No transparency
-        draw = ImageDraw.Draw(img)
-        n_chars = min(int(len(chars) * (t / duration)), len(chars))
-        visible_text = ''.join(chars[:n_chars])
-        lines = wrap_text(visible_text, font)
-        line_height = font.getbbox("A")[3]
-        total_height = len(lines) * (line_height + 10)
-        y = (H - total_height) // 2
+    font = ImageFont.truetype(FONT, 80)
+    rgb = ImageColor.getrgb(clr)
 
-        for line in lines:
-            w = draw.textlength(line, font=font)
-            draw.text(((W - w) // 2, y), line, font=font, fill=color)
-            y += line_height + 10
+    def wrap(t): return textwrap.wrap(t, width=25)
 
+    def render_img(lines):
+        img = Image.new("RGB", (W, H), (0, 0, 0))
+        d = ImageDraw.Draw(img)
+        lh = font.getbbox("A")[3] + 10
+        y = (H - len(lines)*lh)//2
+        for l in lines:
+            w = d.textlength(l, font=font)
+            d.text(((W-w)//2, y), l, fill=rgb, font=font)
+            y += lh
         return np.array(img)
 
-    return VideoClip(make_frame, duration=duration)
-
-# --- Process Button ---
-if st.button("Generate Video"):
-    if not uploaded_video:
-        st.error("Please upload a video.")
-        st.stop()
-
-    # Save uploaded video
-    video_path = os.path.join(TEMP_DIR, "input.mp4")
-    with open(video_path, "wb") as f:
-        f.write(uploaded_video.read())
-
-    # Load and resize video
-    bg_clip = VideoFileClip(video_path).subclip(0, duration_limit).resize((W, H))
-
-    # Font setup
-    font = ImageFont.truetype(FONT_PATH, font_size)
-    color_rgb = ImageColor.getrgb(text_color)
-
-    if text_effect == "Typewriter":
-        txt_clip = typewriter_clip(quote_text, font, color_rgb, bg_clip.duration)
-
+    if fx == "Typewriter":
+        # Only test first frame
+        arr0 = render_img(wrap(txt[:1]))
+        st.image(arr0)
+        txt_clip = ImageClip(arr0).set_duration(1).set_position("center")
     else:
-        # Static or Fade In: use RGBA → convert to RGB safely
-        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        arr = render_img(wrap(txt))
+        st.image(arr)
+        txt_clip = ImageClip(arr).set_duration(dur).set_position("center")
+        if fx == "Fade In":
+            txt_clip = txt_clip.fadein(1)
 
-        lines = wrap_text(quote_text, font)
-        line_height = font.getbbox("A")[3]
-        total_height = len(lines) * (line_height + 10)
-        y = (H - total_height) // 2
+    st.write("✅ Text creation OK")
 
-        for line in lines:
-            w = draw.textlength(line, font=font)
-            draw.text(((W - w) // 2, y), line, font=font, fill=color_rgb + (255,))
-            y += line_height + 10
-
-        # Convert to RGB frame (avoid transparency)
-        final_img = img.convert("RGB")
-        txt_clip = ImageClip(np.array(final_img)).set_duration(bg_clip.duration).set_position("center")
-
-        if text_effect == "Fade In":
-            txt_clip = txt_clip.fadein(1.0)
-
-    # Composite
-    final_clip = CompositeVideoClip([bg_clip, txt_clip])
-    output_path = os.path.join(TEMP_DIR, "final.mp4")
-    final_clip.write_videofile(output_path, fps=24, codec="libx264", preset="ultrafast")
-
-    # Show video
-    st.success("✅ Video ready!")
-    video_bytes = open(output_path, "rb").read()
-    encoded = base64.b64encode(video_bytes).decode()
-
-    st.markdown(
-        f"""
-        <video controls style="width: 360px; height: 640px; border-radius: 12px;">
-            <source src="data:video/mp4;base64,{encoded}" type="video/mp4">
-        </video>
-        """, unsafe_allow_html=True
-    )
-
-    st.download_button("📥 Download", data=video_bytes, file_name="quote_video.mp4")
+    final = CompositeVideoClip([clip, txt_clip])
+    out = os.path.join(TMP, "out.mp4")
+    final.write_videofile(out, fps=24, codec="libx264")
+    st.success("Done")
+    data = open(out, "rb").read()
+    st.video(data)
+    st.download_button("Download", data, "v.mp4")
