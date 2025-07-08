@@ -44,7 +44,7 @@ def typewriter_clip(text, font, color, duration):
         y = (H - total_height) // 2
         for line in lines:
             w = draw.textlength(line, font=font)
-            draw.text(((W - w) // 2, y), line, font=font, fill=color)
+            draw.text(((W - w) // 2, y), line, font=font, fill=color_rgba)
             y += font.getbbox(line)[3] + 10
         return np.array(img)
     return VideoClip(make_frame, duration=duration)
