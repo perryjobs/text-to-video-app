@@ -1,124 +1,134 @@
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
-import numpy as np
-import tempfile, os, io, uuid
-import ffmpeg
-import threading
+import os
+import tempfile
+import subprocess
+import base64
 
 # Constants
 W, H = 1080, 1920
-PREVIEW_W, PREVIEW_H = 360, 640
-FPS = 24
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+TEMP_DIR = tempfile.mkdtemp()
 
-st.set_page_config(layout="centered")
-st.title("🎬 Quote Video Maker – Animated Text Overlay (ffmpeg-python)")
+def run_cmd(cmd):
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Command failed:\n{' '.join(cmd)}\n{result.stderr}")
+    return result
 
-uploaded_video = st.file_uploader("Upload vertical MP4 video (9:16)", type=["mp4"])
-quote_text = st.text_area("Enter your quote", "Believe in yourself.\nYou are stronger than you think.", height=150)
-font_size = st.slider("Font size", 30, 120, 90)
-text_color = st.color_picker("Text color", "#FFFFFF")
-duration = st.slider("Clip duration (seconds)", 3, 15, 6)
-animation = st.selectbox("Text Animation", ["Static", "Fade In", "Typewriter"])
+def save_text_video(text, out_path, duration, fps=24):
+    # Use ffmpeg drawtext filter with typewriter effect (characters appear one by one)
+    # Escape text properly for ffmpeg
+    escaped_text = text.replace(":", "\\:").replace("'", "\\'")
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", f"color=c=black:s={W}x{H}:d={duration}:r={fps}",
+        "-vf",
+        (
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+            f"text='{escaped_text}':"
+            f"fontcolor=white:fontsize=90:"
+            f"x=(w-text_w)/2:y=(h-text_h)/2:"
+            f"enable='between(t,0,{duration})':"
+            f"alpha='if(lt(t,n*{duration}/len(text)),0,1)'"
+        ),
+        "-pix_fmt", "yuva420p",
+        "-c:v", "libx264",
+        "-crf", "18",
+        "-preset", "fast",
+        "-t", str(duration),
+        out_path
+    ]
+    run_cmd(cmd)
 
-def wrap_text(text, font, max_width):
-    dummy_img = Image.new("RGBA", (1,1))
-    draw = ImageDraw.Draw(dummy_img)
-    lines = []
-    for paragraph in text.split("\n"):
-        words = paragraph.split()
-        if not words:
-            lines.append("")
-            continue
-        line = ""
-        for word in words:
-            test_line = f"{line} {word}".strip()
-            if draw.textlength(test_line, font=font) <= max_width:
-                line = test_line
-            else:
-                lines.append(line)
-                line = word
-        lines.append(line)
-    return lines
-
-def generate_frame(text, font, color_rgba, alpha=255):
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    lines = wrap_text(text, font, max_width=W-100)
-
-    line_heights = [font.getbbox(line)[3] for line in lines]
-    total_height = sum(line_heights) + (len(lines)-1)*10
-    y = (H - total_height)//2
-
-    for line in lines:
-        w = draw.textlength(line, font=font)
-        draw.text(((W - w)//2, y), line, font=font, fill=color_rgba[:3] + (alpha,))
-        y += font.getbbox(line)[3] + 10
-    return np.array(img)
-
-def frame_generator(text, font, color_rgba, duration, fps, animation_type):
-    total_frames = int(duration * fps)
-    total_chars = len(text)
-    for i in range(total_frames):
-        if animation_type == "Typewriter":
-            chars_to_show = int(total_chars * i / total_frames)
-            partial_text = text[:chars_to_show]
-            frame = generate_frame(partial_text, font, color_rgba, alpha=255)
-        elif animation_type == "Fade In":
-            alpha = int(255 * i / total_frames)
-            frame = generate_frame(text, font, color_rgba, alpha=alpha)
-        else:  # Static
-            frame = generate_frame(text, font, color_rgba, alpha=255)
-        yield frame
-
-def save_text_video(frames, path, fps):
-    process = (
-        ffmpeg
-        .input('pipe:', format='rawvideo', pix_fmt='rgba', s=f'{W}x{H}', framerate=fps)
-        .output(path, pix_fmt='yuva420p', vcodec='libx264', crf=18)
-        .overwrite_output()
-        .run_async(pipe_stdin=True)
-    )
-    for frame in frames:
-        process.stdin.write(frame.astype(np.uint8).tobytes())
-    process.stdin.close()
-    process.wait()
+def save_text_video_fade(text, out_path, duration, fps=24):
+    escaped_text = text.replace(":", "\\:").replace("'", "\\'")
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", f"color=c=black:s={W}x{H}:d={duration}:r={fps}",
+        "-vf",
+        (
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+            f"text='{escaped_text}':"
+            f"fontcolor=white@0:fontsize=90:"
+            f"x=(w-text_w)/2:y=(h-text_h)/2:"
+            f"alpha='if(lt(t,1),t,1)'"
+        ),
+        "-pix_fmt", "yuva420p",
+        "-c:v", "libx264",
+        "-crf", "18",
+        "-preset", "fast",
+        "-t", str(duration),
+        out_path
+    ]
+    run_cmd(cmd)
 
 def overlay_text_on_video(bg_path, txt_path, out_path):
-    (
-        ffmpeg
-        .input(bg_path)
-        .input(txt_path)
-        .filter_complex('[0:v][1:v] overlay=0:0:format=auto')
-        .output(out_path, vcodec='libx264', crf=18, preset='medium', acodec='copy')
-        .overwrite_output()
-        .run()
-    )
+    if not os.path.exists(bg_path):
+        raise FileNotFoundError(f"Background video missing: {bg_path}")
+    if not os.path.exists(txt_path):
+        raise FileNotFoundError(f"Text video missing: {txt_path}")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", bg_path,
+        "-i", txt_path,
+        "-filter_complex", "[0:v][1:v] overlay=0:0:format=auto",
+        "-c:a", "copy",
+        "-c:v", "libx264",
+        "-crf", "18",
+        "-preset", "fast",
+        out_path
+    ]
+    run_cmd(cmd)
+
+st.title("🎬 Quote Video Maker – Text Animation Overlay with FFmpeg")
+
+uploaded_video = st.file_uploader("Upload vertical MP4 video (9:16)", type=["mp4"])
+quote_text = st.text_area("Enter your quote", "Believe in yourself. You're stronger than you think.")
+duration_limit = st.slider("Clip Duration (seconds)", 3, 15, 6)
+text_effect = st.selectbox("Text Animation", ["Static", "Fade In", "Typewriter"])
 
 if st.button("Generate Video"):
     if not uploaded_video:
         st.error("Please upload a video.")
         st.stop()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as f:
+    # Save uploaded video
+    bg_path = os.path.join(TEMP_DIR, "background.mp4")
+    with open(bg_path, "wb") as f:
         f.write(uploaded_video.read())
-        bg_path = f.name
 
-    font = ImageFont.truetype(FONT_PATH, font_size)
-    rgb = tuple(int(text_color[i:i+2],16) for i in (1,3,5))
-    color_rgba = rgb + (255,)
+    txt_path = os.path.join(TEMP_DIR, "text.mp4")
+    final_path = os.path.join(TEMP_DIR, "final.mp4")
 
-    frames = frame_generator(quote_text, font, color_rgba, duration, FPS, animation)
-    txt_video_path = os.path.join(tempfile.gettempdir(), f"text_{uuid.uuid4().hex}.mp4")
-    st.info("Generating text video...")
-    save_text_video(frames, txt_video_path, FPS)
+    try:
+        # Generate text video with chosen animation
+        if text_effect == "Typewriter":
+            save_text_video(quote_text, txt_path, duration_limit)
+        elif text_effect == "Fade In":
+            save_text_video_fade(quote_text, txt_path, duration_limit)
+        else:  # Static
+            # Static text - just a still image video
+            save_text_video_fade(quote_text, txt_path, duration_limit)  # reuse fade for static (alpha=1 after 1s)
 
-    final_path = os.path.join(tempfile.gettempdir(), f"final_{uuid.uuid4().hex}.mp4")
-    st.info("Overlaying text on background video...")
-    overlay_text_on_video(bg_path, txt_video_path, final_path)
+        # Overlay text video onto background video
+        overlay_text_on_video(bg_path, txt_path, final_path)
 
-    st.success("✅ Done! Here's your video:")
-    st.video(final_path, start_time=0, width=PREVIEW_W)
+        st.success("✅ Done!")
 
-    with open(final_path, "rb") as f:
-        st.download_button("📥 Download Video", f.read(), file_name="quote_video.mp4")
+        # Preview video
+        video_bytes = open(final_path, "rb").read()
+        encoded_video = base64.b64encode(video_bytes).decode()
+        st.markdown(
+            f"""
+            <video controls style="width: 360px; height: 640px; border-radius: 12px;">
+                <source src="data:video/mp4;base64,{encoded_video}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.download_button("📥 Download Video", video_bytes, "quote_video.mp4")
+    except Exception as e:
+        st.error(f"Error: {e}")
