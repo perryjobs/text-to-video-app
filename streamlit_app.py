@@ -88,4 +88,4 @@ if st.button("Generate Video"):
             """,
             unsafe_allow_html=True,
         )
-        st.download_button("📥 Download Video", video_bytes, "quote_video.mp4")
+    st.download_button("📥 Download Video", video_bytes, "quote_video.mp4")
