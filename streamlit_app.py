@@ -73,7 +73,7 @@ if st.button("Generate Video"):
 
     # Export
     out = os.path.join(TEMP_DIR, "final.mp4")
-    video.write_videofile(out, fps=24, preset="ultrafast")
+    final.write_videofile(out, fps=24, preset="ultrafast")
 
     st.success("✅ Done!")
     # --- Video Preview & Download ---
