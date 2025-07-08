@@ -87,13 +87,31 @@ if st.button("Generate Video"):
     bg_video = VideoFileClip(tmp_path).without_audio().resize((W, H))
     clips = []
 
-    for i, quote in enumerate(quotes):
-        bg = bg_video.subclip(0, quote_dur)
-        txt = typewriter_clip((W,H), quote, font, text_color, quote_dur) if text_anim == "Typewriter" else static_text_clip((W,H), quote, font, text_color, quote_dur)
-        comp = CompositeVideoClip([bg, txt.set_position("center")], size=(W,H)).set_duration(quote_dur)
-        clips.append(comp)
+# ... your loop that appends clips ...
 
-    final = concatenate_videoclips(clips, method="compose")
+if not clips:
+    st.error("No video clips were created. Please check your inputs.")
+    st.stop()
+
+# Combine clips
+if len(clips) == 1:
+    video = clips[0]
+else:
+    timeline = []
+    current_start = 0
+    for idx, c in enumerate(clips):
+        if idx == 0:
+            timeline.append(c.set_start(current_start))
+        else:
+            timeline.append(c.set_start(current_start).crossfadein(trans_dur))
+        current_start += quote_dur - trans_dur
+
+    video = CompositeVideoClip(timeline, size=(W, H)).set_duration(current_start + trans_dur)
+
+# Now video is guaranteed to exist before writing
+out = os.path.join(TEMP_DIR, "final.mp4")
+video.write_videofile(out, fps=24, preset="ultrafast")
+
 
     # Add voiceover if selected
     if voiceover:
