@@ -31,7 +31,7 @@ def wrap_text(text, draw, font, max_chars=25):
     return wrapped
 
 # --- Helper: Typewriter animation ---
-def typewriter_clip(text, font, color, duration):
+def typewriter_clip(text, font, color_rgb, duration):
     chars = list(text)
     def make_frame(t):
         img = Image.new("RGB", (W, H), (0, 0, 0))
@@ -44,7 +44,7 @@ def typewriter_clip(text, font, color, duration):
         y = (H - total_height) // 2
         for line in lines:
             w = draw.textlength(line, font=font)
-            draw.text(((W - w) // 2, y), line, font=font, fill=color_rgba)
+            draw.text(((W - w) // 2, y), line, font=font, fill=color_rgb)
             y += font.getbbox(line)[3] + 10
         return np.array(img)
     return VideoClip(make_frame, duration=duration)
@@ -63,21 +63,14 @@ if st.button("Generate Video"):
     # Load & resize video
     bg_clip = VideoFileClip(video_path).resize((W, H)).subclip(0, duration_limit)
 
-    # Load font
+    # Load font and color
     font = ImageFont.truetype(FONT_PATH, font_size)
-    color_rgba = ImageColor.getrgb(text_color) + (255,)
-
-    # Generate text clip based on animation type
-
-    from PIL import ImageColor
-
-    # Before animation switch
     color_rgb = ImageColor.getrgb(text_color)
-    color_rgba = color_rgb + (255,)
+    color_rgba = color_rgb + (255,)  # For RGBA text drawing
 
+    # === Animation Switch ===
     if text_effect == "Typewriter":
         txt_clip = typewriter_clip(quote_text, font, color_rgb, bg_clip.duration)
-
     else:
         # Create transparent RGBA image
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -85,24 +78,24 @@ if st.button("Generate Video"):
         wrapped_lines = wrap_text(quote_text, draw, font)
 
         line_heights = [
-        draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
-    for line in wrapped_lines
+            draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
+            for line in wrapped_lines
         ]
         total_height = sum(line_heights) + (len(wrapped_lines) - 1) * 10
         y = (H - total_height) // 2
 
-for line in wrapped_lines:
-    w = draw.textlength(line, font=font)
-    h = draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
-    draw.text(((W - w) // 2, y), line, font=font, fill=color_rgba)
-    y += h + 10
+        for line in wrapped_lines:
+            w = draw.textlength(line, font=font)
+            h = draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
+            draw.text(((W - w) // 2, y), line, font=font, fill=color_rgba)
+            y += h + 10
 
-# ✅ Convert to RGB for MoviePy
-    np_img = np.array(img.convert("RGB"))
+        # Convert to RGB to avoid black screen issue
+        np_img = np.array(img.convert("RGB"))
+        txt_clip = ImageClip(np_img).set_duration(bg_clip.duration).set_position("center")
 
-    txt_clip = ImageClip(np_img).set_duration(bg_clip.duration).set_position("center")
-if text_effect == "Fade In":
-    txt_clip = txt_clip.fadein(1.0)
+        if text_effect == "Fade In":
+            txt_clip = txt_clip.fadein(1.0)
 
     # Combine video + text
     final = CompositeVideoClip([bg_clip, txt_clip])
