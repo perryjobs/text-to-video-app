@@ -1,150 +1,146 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
-import tempfile
-import os
-import textwrap
+import tempfile, os, subprocess, shutil, uuid
 import numpy as np
-import subprocess
-import shutil
-import uuid
 
-# --- Constants ---
+# Constants
 W, H = 1080, 1920
+PREVIEW_W, PREVIEW_H = 360, 640
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FPS = 24
 
-# --- Setup ---
 st.set_page_config(layout="centered")
-st.title("🎬 Quote Video Maker (No MoviePy!)")
+st.title("🎬 Quote Video Maker with Transparent Text Overlay")
 
-# Check for ffmpeg binary
+# Check ffmpeg
 ffmpeg_path = shutil.which("ffmpeg")
-if ffmpeg_path is None:
-    st.error("FFmpeg not found! Please install FFmpeg and ensure it's on PATH.")
+if not ffmpeg_path:
+    st.error("FFmpeg not found! Please add FFmpeg to your PATH or install it.")
     st.stop()
-else:
-    st.write(f"Using FFmpeg at: {ffmpeg_path}")
 
-# --- Inputs ---
-uploaded_video = st.file_uploader("📤 Upload Vertical MP4 Video (9:16)", type=["mp4"])
-quote_text = st.text_area("✍️ Enter your quote", "Believe in yourself.\nYou're stronger than you think.", height=150)
-font_size = st.slider("🔠 Font Size", 30, 120, 90)
-text_color = st.color_picker("🎨 Text Color", "#FFFFFF")
-duration = st.slider("🎞️ Clip Duration", 3, 15, 6)
-effect = st.selectbox("🌀 Text Animation", ["Static", "Fade In", "Typewriter"])
+# Inputs
+uploaded_video = st.file_uploader("Upload vertical MP4 video (9:16)", type=["mp4"])
+quote_text = st.text_area("Enter your quote", "Believe in yourself.\nYou are stronger than you think.", height=150)
+font_size = st.slider("Font size", 30, 120, 90)
+text_color = st.color_picker("Text color", "#FFFFFF")
+duration = st.slider("Clip duration (seconds)", 3, 15, 6)
+animation = st.selectbox("Text Animation", ["Static", "Fade In", "Typewriter"])
 
-# --- Helpers ---
-def wrap_text(text, font, max_width=W - 100):
-    draw = ImageDraw.Draw(Image.new("RGB", (W, H)))
+def wrap_text(text, font, max_width):
+    dummy_img = Image.new("RGBA", (1,1))
+    draw = ImageDraw.Draw(dummy_img)
     lines = []
-    for line in text.split("\n"):
-        words = line.split()
+    for paragraph in text.split("\n"):
+        words = paragraph.split()
         if not words:
             lines.append("")
             continue
-        wrapped = ""
+        line = ""
         for word in words:
-            test = wrapped + word + " "
-            w = draw.textlength(test, font=font)
-            if w <= max_width:
-                wrapped = test
+            test_line = f"{line} {word}".strip()
+            if draw.textlength(test_line, font=font) <= max_width:
+                line = test_line
             else:
-                lines.append(wrapped.strip())
-                wrapped = word + " "
-        lines.append(wrapped.strip())
+                lines.append(line)
+                line = word
+        lines.append(line)
     return lines
 
-def generate_frames(effect_type, text, font, color, frame_count, fps):
+def generate_frames(text, font, color_rgba, duration, fps, animation_type):
+    total_frames = int(duration * fps)
     frames = []
-    lines = wrap_text(text, font)
-    line_heights = [font.getbbox(line)[3] for line in lines]
-    total_height = sum(line_heights) + (len(lines) - 1) * 10
-    y_start = (H - total_height) // 2
 
-    for i in range(frame_count):
-        img = Image.new("RGB", (W, H), (0, 0, 0))
+    lines = wrap_text(text, font, max_width=W-100)
+    line_heights = [font.getbbox(line)[3] for line in lines]
+    total_text_height = sum(line_heights) + (len(lines) -1)*10
+    y_start = (H - total_text_height) // 2
+
+    for frame_idx in range(total_frames):
+        img = Image.new("RGBA", (W,H), (0,0,0,0))
         draw = ImageDraw.Draw(img)
 
-        if effect_type == "Typewriter":
-            n_chars = int(len(text) * (i / frame_count))
-            partial = text[:n_chars]
-            show_lines = wrap_text(partial, font)
+        # Determine how many chars or alpha based on animation
+        if animation_type == "Typewriter":
+            total_chars = len(text)
+            chars_to_show = int(total_chars * frame_idx / total_frames)
+            partial_text = text[:chars_to_show]
+            show_lines = wrap_text(partial_text, font, max_width=W-100)
         else:
             show_lines = lines
 
+        # Alpha for fade in
+        alpha = 255
+        if animation_type == "Fade In":
+            alpha = int(255 * frame_idx / total_frames)
+
         y = y_start
         for line in show_lines:
-            alpha = 255
-            if effect_type == "Fade In":
-                alpha = int(255 * (i / frame_count))
-            text_img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-            text_draw = ImageDraw.Draw(text_img)
             w = draw.textlength(line, font=font)
-            text_draw.text(((W - w) // 2, y), line, font=font, fill=color + (alpha,))
-            img = Image.alpha_composite(img.convert("RGBA"), text_img).convert("RGB")
+            # Draw line with alpha
+            draw.text(((W - w)//2, y), line, font=font, fill=color_rgba[:3] + (alpha,))
             y += font.getbbox(line)[3] + 10
 
         frames.append(np.array(img))
     return frames
 
-def render_text_video(frames, output_path, fps):
-    temp_dir = tempfile.mkdtemp()
+def save_frames_as_video(frames, path, fps):
+    tmpdir = tempfile.mkdtemp()
     for i, frame in enumerate(frames):
-        Image.fromarray(frame).save(os.path.join(temp_dir, f"frame_{i:04d}.png"))
+        Image.fromarray(frame).save(os.path.join(tmpdir, f"frame_{i:04d}.png"))
 
-    frame_pattern = os.path.join(temp_dir, "frame_%04d.png")
     cmd = [
         ffmpeg_path,
         "-y",
         "-framerate", str(fps),
-        "-i", frame_pattern,
-        "-vf", f"scale={W}:{H}",
+        "-i", os.path.join(tmpdir, "frame_%04d.png"),
         "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        output_path
+        "-pix_fmt", "yuva420p",  # preserve alpha channel
+        "-vf", f"scale={W}:{H}",
+        "-r", str(fps),
+        path
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-    shutil.rmtree(temp_dir)
+    shutil.rmtree(tmpdir)
 
-def overlay_text_on_video(bg_video_path, text_video_path, output_path):
+def overlay_text_on_video(bg_path, txt_path, out_path):
     cmd = [
         ffmpeg_path,
         "-y",
-        "-i", bg_video_path,
-        "-i", text_video_path,
-        "-filter_complex", "[0:v][1:v] overlay=0:0:enable='between(t,0,20)'",
+        "-i", bg_path,
+        "-i", txt_path,
+        "-filter_complex", "[0:v][1:v] overlay=0:0:format=auto",
         "-c:a", "copy",
-        output_path
+        out_path
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 
-# --- Generate ---
-if st.button("🚀 Generate Video"):
+if st.button("Generate Video"):
     if not uploaded_video:
         st.error("Please upload a video.")
         st.stop()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as vid_file:
-        vid_file.write(uploaded_video.read())
-        bg_video_path = vid_file.name
+    # Save uploaded video
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as f:
+        f.write(uploaded_video.read())
+        bg_path = f.name
 
     font = ImageFont.truetype(FONT_PATH, font_size)
-    color_rgb = tuple(int(text_color[i:i+2], 16) for i in (1, 3, 5))
+    rgb = tuple(int(text_color[i:i+2], 16) for i in (1,3,5))
+    color_rgba = rgb + (255,)
 
-    fps = 24
-    total_frames = duration * fps
+    st.info("Generating text frames...")
+    frames = generate_frames(quote_text, font, color_rgba, duration, FPS, animation)
 
-    st.info("Rendering text frames...")
-    frames = generate_frames(effect, quote_text, font, color_rgb, total_frames, fps)
+    st.info("Encoding text video...")
+    txt_video_path = os.path.join(tempfile.gettempdir(), f"text_{uuid.uuid4().hex}.mp4")
+    save_frames_as_video(frames, txt_video_path, FPS)
 
-    st.info("Creating text video...")
-    text_video_path = os.path.join(tempfile.gettempdir(), f"text_{uuid.uuid4().hex}.mp4")
-    render_text_video(frames, text_video_path, fps)
-
-    st.info("Merging with original video...")
+    st.info("Overlaying text on video...")
     final_path = os.path.join(tempfile.gettempdir(), f"final_{uuid.uuid4().hex}.mp4")
-    overlay_text_on_video(bg_video_path, text_video_path, final_path)
+    overlay_text_on_video(bg_path, txt_video_path, final_path)
 
-    st.success("✅ Done!")
-    st.video(final_path)
+    st.success("Done! Here's your video:")
+    st.video(final_path, format="video/mp4", start_time=0, width=PREVIEW_W)
+
     with open(final_path, "rb") as f:
-        st.download_button("📥 Download Final Video", f.read(), file_name="quote_video.mp4")
+        st.download_button("Download Video", f.read(), file_name="quote_video.mp4")
