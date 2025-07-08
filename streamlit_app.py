@@ -16,6 +16,14 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 st.set_page_config(layout="centered")
 st.title("🎬 Quote Video Maker (No MoviePy!)")
 
+# Check for ffmpeg binary
+ffmpeg_path = shutil.which("ffmpeg")
+if ffmpeg_path is None:
+    st.error("FFmpeg not found! Please install FFmpeg and ensure it's on PATH.")
+    st.stop()
+else:
+    st.write(f"Using FFmpeg at: {ffmpeg_path}")
+
 # --- Inputs ---
 uploaded_video = st.file_uploader("📤 Upload Vertical MP4 Video (9:16)", type=["mp4"])
 quote_text = st.text_area("✍️ Enter your quote", "Believe in yourself.\nYou're stronger than you think.", height=150)
@@ -85,7 +93,7 @@ def render_text_video(frames, output_path, fps):
 
     frame_pattern = os.path.join(temp_dir, "frame_%04d.png")
     cmd = [
-        "ffmpeg",
+        ffmpeg_path,
         "-y",
         "-framerate", str(fps),
         "-i", frame_pattern,
@@ -99,7 +107,7 @@ def render_text_video(frames, output_path, fps):
 
 def overlay_text_on_video(bg_video_path, text_video_path, output_path):
     cmd = [
-        "ffmpeg",
+        ffmpeg_path,
         "-y",
         "-i", bg_video_path,
         "-i", text_video_path,
