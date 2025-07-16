@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import textwrap
 import tempfile
-from moviepy.editor import *
+from moviepy.editor import ImageClip
 from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 import numpy as np
@@ -19,12 +19,11 @@ def hex_to_rgb(hex_color):
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 # Utility: Create a frame with text using PIL
-def create_text_frame(text, font_path, font_size, text_color, size=(1080, 1920)):
-    img = Image.new("RGBA", size, (255, 255, 255, 0))
+def create_text_image(text, font_path, font_size, text_color, size=(1080, 1920)):
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(font_path, font_size)
     wrapped = textwrap.fill(text, width=20)
-    # Use multiline_textbbox instead of multiline_textsize
     bbox = draw.multiline_textbbox((0, 0), wrapped, font=font)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
@@ -34,9 +33,8 @@ def create_text_frame(text, font_path, font_size, text_color, size=(1080, 1920))
 
 # Animation types
 def static_clip(text, font, color_rgb, duration, size=(1080, 1920)):
-    def make_frame(t):
-        return create_text_frame(text, font, 90, color_rgb, size)
-    return VideoClip(make_frame, duration=duration)
+    img = create_text_image(text, font_path, 90, color_rgb, size)
+    return ImageClip(img).set_duration(duration)
 
 def typewriter_clip(text, font, color_rgb, duration, size=(1080, 1920)):
     def make_frame(t):
