@@ -1,33 +1,68 @@
 import streamlit as st
 import os
-import textwrap
 import tempfile
-from moviepy.editor import VideoFileClip, CompositeVideoClip, ImageClip, AudioFileClip
+from moviepy.editor import VideoFileClip, CompositeVideoClip, AudioFileClip
 from gtts import gTTS
-from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
-# Monkey patch for Pillow >=10
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.Resampling.LANCZOS
+# Utility functions
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def create_text_image(text, font_path, font_size, color, max_width=800):
+    from PIL import Image, ImageDraw, ImageFont
+    lines = textwrap.wrap(text, width=25)
+    font = ImageFont.truetype(font_path, font_size)
+    # Determine size
+    width, height = 0, 0
+    line_heights = []
+    for line in lines:
+        size = font.getsize(line)
+        width = max(width, size[0])
+        line_heights.append(size[1])
+        height += size[1]
+    img = Image.new('RGBA', (width + 20, height + 20), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    y = 10
+    for i, line in enumerate(lines):
+        draw.text((10, y), line, font=font, fill=color)
+        y += line_heights[i]
+    return img
+
+def static_clip(text, font_path, color, duration, font_size=90):
+    img = create_text_image(text, font_path, font_size, color)
+    image_path = "/tmp/text.png"
+    img.save(image_path)
+    return ImageClip(image_path).set_duration(duration)
+
+def fadein_clip(text, font_path, color, duration, font_size=90):
+    clip = static_clip(text, font_path, color, duration, font_size)
+    return clip.fadein(2)
+
+def typewriter_clip(text, font_path, color, duration, font_size=90):
+    from moviepy.editor import TextClip
+    txt_clip = TextClip(text, fontsize=font_size, font=os.path.basename(font_path), color='white').set_duration(duration)
+    return txt_clip
+
+def generate_voice_over(text):
+    tts = gTTS(text)
+    tmpfile = "/tmp/voice.mp3"
+    tts.save(tmpfile)
+    return tmpfile
 
 st.set_page_config(layout="wide", page_title="Quote Video Maker")
 
-# Utility functions (same as before)
-# ... [include all utility functions from previous code: hex_to_rgb, create_text_image, static_clip, fadein_clip, typewriter_clip, generate_voice_over] ...
-
-# Main UI
 st.title("🎬 Quote Video Maker")
 quote_text = st.text_area("✍️ Enter your quote:", "Believe in yourself. You're stronger than you think.")
 font_size = 90
-font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-font_color = st.color_picker("🖌️ Choose font color", "#FFFFFF")
+font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # Adjust if necessary
 animation = st.selectbox("🎞️ Select text animation", ["static", "typewriter", "fade in"])
+font_color = st.color_picker("🖌️ Choose font color", "#FFFFFF")
 video_file = st.file_uploader("📹 Upload vertical video (1080x1920)", type=["mp4", "mov", "webm"])
 generate = st.button("Generate Video")
 
 if generate:
-    # Step 1: Upload & process background video
     if not video_file:
         st.error("Please upload a background video.")
     else:
@@ -37,7 +72,7 @@ if generate:
             with open(bg_path, "wb") as f:
                 f.write(video_file.read())
 
-            # Load and resize background video
+            # Step 1: Process background video
             try:
                 bg_clip = VideoFileClip(bg_path)
                 st.info("Processing background video...")
@@ -58,9 +93,13 @@ if generate:
                 st.stop()
 
             duration = min(bg_clip.duration, 6)
-            color_rgb = hex_to_rgb(font_color)
+            try:
+                color_rgb = hex_to_rgb(font_color)
+            except Exception as e:
+                st.error(f"Invalid color format: {e}")
+                st.stop()
 
-            # Step 2: Generate text overlay clip based on selected animation
+            # Step 2: Generate text overlay
             st.info("Generating text overlay...")
             try:
                 if animation == "static":
@@ -76,7 +115,7 @@ if generate:
                 st.error(f"Error creating text overlay: {e}")
                 st.stop()
 
-            # Step 3: Generate voice-over audio
+            # Step 3: Generate voice-over
             st.info("Generating voice-over...")
             try:
                 voice_path = generate_voice_over(quote_text)
@@ -86,7 +125,7 @@ if generate:
                 st.error(f"Error generating voice-over: {e}")
                 st.stop()
 
-            # Step 4: Combine everything
+            # Step 4: Combine all
             st.info("Combining elements into final video...")
             try:
                 final = CompositeVideoClip([bg_clip, txt_clip.set_position("center")]).set_duration(duration)
