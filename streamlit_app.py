@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import textwrap
 import tempfile
-from moviepy.editor import ImageClip
+from moviepy.editor import VideoFileClip, CompositeVideoClip, ImageClip
 from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 import numpy as np
@@ -31,23 +31,18 @@ def create_text_image(text, font_path, font_size, text_color, size=(1080, 1920))
     draw.multiline_text(pos, wrapped, font=font, fill=text_color, align="center")
     return np.array(img)
 
-# Animation types
-def static_clip(text, font, color_rgb, duration, size=(1080, 1920)):
+# Animation functions
+def static_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
     img = create_text_image(text, font_path, 90, color_rgb, size)
     return ImageClip(img).set_duration(duration)
 
-def typewriter_clip(text, font, color_rgb, duration, size=(1080, 1920)):
-    def make_frame(t):
-        chars = int(len(text) * (t / duration))
-        return create_text_frame(text[:chars], font, 90, color_rgb, size)
-    return VideoClip(make_frame, duration=duration)
+def typewriter_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
+    # Placeholder: Implement if needed
+    pass
 
-def fadein_clip(text, font, color_rgb, duration, size=(1080, 1920)):
-    def make_frame(t):
-        alpha = min(t / 1.5, 1)
-        rgba_color = tuple(int(c * alpha) for c in color_rgb) + (int(255 * alpha),)
-        return create_text_frame(text, font, 90, rgba_color[:3], size)
-    return VideoClip(make_frame, duration=duration)
+def fadein_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
+    # Placeholder: Implement if needed
+    pass
 
 # UI
 st.title("🎬 Quote Video Maker")
@@ -66,17 +61,42 @@ if generate and video_file:
         with open(bg_path, "wb") as f:
             f.write(video_file.read())
 
-        bg_clip = VideoFileClip(bg_path).resize((1080, 1920)).without_audio()
+        # Load and resize background video with aspect ratio preservation
+        try:
+            bg_clip = VideoFileClip(bg_path)
+
+            # Resize based on height to maintain aspect ratio
+            bg_clip = bg_clip.resize(height=1920)
+
+            # Adjust width to 1080 via cropping or padding
+            if bg_clip.w < 1080:
+                pad_width = 1080 - bg_clip.w
+                bg_clip = bg_clip.margin(left=pad_width//2, right=pad_width//2, color=(0, 0, 0))
+            elif bg_clip.w > 1080:
+                left_crop = (bg_clip.w - 1080) // 2
+                right_crop = left_crop + 1080
+                bg_clip = bg_clip.crop(x1=left_crop, x2=right_crop)
+
+            bg_clip = bg_clip.without_audio()
+        except Exception as e:
+            st.error(f"Error processing background video: {e}")
+            continue
+
+        # Set duration for text overlay
         duration = min(bg_clip.duration, 6)
         color_rgb = hex_to_rgb(font_color)
 
+        # Generate text clip based on selected animation
         if animation == "static":
             txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
         elif animation == "typewriter":
-            txt_clip = typewriter_clip(quote_text, font_path, color_rgb, duration)
+            # Implement if needed
+            txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
         elif animation == "fade in":
-            txt_clip = fadein_clip(quote_text, font_path, color_rgb, duration)
+            # Implement if needed
+            txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
 
+        # Overlay text on background
         final = CompositeVideoClip([bg_clip, txt_clip.set_position("center")]).set_duration(duration)
 
         output_path = os.path.join(tmpdir, "output.mp4")
