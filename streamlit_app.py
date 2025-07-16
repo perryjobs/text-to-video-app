@@ -4,7 +4,6 @@ import textwrap
 import tempfile
 from moviepy.editor import VideoFileClip, CompositeVideoClip, ImageClip
 from PIL import Image, ImageDraw, ImageFont
-from gtts import gTTS
 import numpy as np
 
 # Monkey patch for Pillow >=10
@@ -31,18 +30,18 @@ def create_text_image(text, font_path, font_size, text_color, size=(1080, 1920))
     draw.multiline_text(pos, wrapped, font=font, fill=text_color, align="center")
     return np.array(img)
 
-# Animation functions
+# Animation functions (placeholders)
 def static_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
     img = create_text_image(text, font_path, 90, color_rgb, size)
     return ImageClip(img).set_duration(duration)
 
 def typewriter_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
-    # Placeholder: Implement if needed
-    pass
+    # Implement as needed
+    return static_clip(text, font_path, color_rgb, duration)
 
 def fadein_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
-    # Placeholder: Implement if needed
-    pass
+    # Implement as needed
+    return static_clip(text, font_path, color_rgb, duration)
 
 # UI
 st.title("🎬 Quote Video Maker")
@@ -54,8 +53,11 @@ animation = st.selectbox("🎞️ Select text animation", ["static", "typewriter
 video_file = st.file_uploader("📹 Upload vertical video (1080x1920)", type=["mp4", "mov", "webm"])
 generate = st.button("Generate Video")
 
-# Processing
-if generate and video_file:
+def process_video():
+    if not video_file:
+        st.error("Please upload a background video.")
+        return
+
     with tempfile.TemporaryDirectory() as tmpdir:
         bg_path = os.path.join(tmpdir, "bg.mp4")
         with open(bg_path, "wb") as f:
@@ -80,7 +82,7 @@ if generate and video_file:
             bg_clip = bg_clip.without_audio()
         except Exception as e:
             st.error(f"Error processing background video: {e}")
-            continue
+            return
 
         # Set duration for text overlay
         duration = min(bg_clip.duration, 6)
@@ -90,10 +92,10 @@ if generate and video_file:
         if animation == "static":
             txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
         elif animation == "typewriter":
-            # Implement if needed
-            txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
+            txt_clip = typewriter_clip(quote_text, font_path, color_rgb, duration)
         elif animation == "fade in":
-            # Implement if needed
+            txt_clip = fadein_clip(quote_text, font_path, color_rgb, duration)
+        else:
             txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
 
         # Overlay text on background
@@ -104,3 +106,6 @@ if generate and video_file:
 
         st.video(output_path)
         st.success("✅ Video created successfully!")
+
+if generate:
+    process_video()
