@@ -24,7 +24,10 @@ def create_text_frame(text, font_path, font_size, text_color, size=(1080, 1920))
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(font_path, font_size)
     wrapped = textwrap.fill(text, width=20)
-    text_w, text_h = draw.multiline_textsize(wrapped, font=font)
+    # Use multiline_textbbox instead of multiline_textsize
+    bbox = draw.multiline_textbbox((0, 0), wrapped, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
     pos = ((size[0] - text_w) // 2, (size[1] - text_h) // 2)
     draw.multiline_text(pos, wrapped, font=font, fill=text_color, align="center")
     return np.array(img)
