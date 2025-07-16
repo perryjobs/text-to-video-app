@@ -2,7 +2,8 @@ import streamlit as st
 import os
 import textwrap
 import tempfile
-from moviepy.editor import VideoFileClip, CompositeVideoClip, ImageClip
+from moviepy.editor import VideoFileClip, CompositeVideoClip, ImageClip, AudioFileClip
+from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
@@ -30,18 +31,40 @@ def create_text_image(text, font_path, font_size, text_color, size=(1080, 1920))
     draw.multiline_text(pos, wrapped, font=font, fill=text_color, align="center")
     return np.array(img)
 
-# Animation functions (placeholders)
+# Generate a static text clip
 def static_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
     img = create_text_image(text, font_path, 90, color_rgb, size)
     return ImageClip(img).set_duration(duration)
 
-def typewriter_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
-    # Implement as needed
-    return static_clip(text, font_path, color_rgb, duration)
-
+# Generate a fade-in text clip
 def fadein_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
-    # Implement as needed
-    return static_clip(text, font_path, color_rgb, duration)
+    return static_clip(text, font_path, color_rgb, duration).fadein(1)
+
+# Generate a typewriter effect clip
+def typewriter_clip(text, font_path, color_rgb, duration, size=(1080, 1920)):
+    # Number of frames based on duration and fps
+    fps = 24
+    total_frames = int(duration * fps)
+    clips = []
+
+    # For each frame, reveal a portion of the text
+    for i in range(total_frames):
+        progress = i / total_frames
+        chars_to_show = int(len(text) * progress)
+        current_text = text[:chars_to_show]
+        img = create_text_image(current_text, font_path, 90, color_rgb, size)
+        clip = ImageClip(img).set_duration(1/fps)
+        clips.append(clip)
+
+    # Concatenate all frames
+    return concatenate_videoclips(clips, method="compose").set_duration(duration)
+
+# Utility: Generate voice-over using gTTS
+def generate_voice_over(text, lang='en'):
+    tts = gTTS(text=text, lang=lang)
+    temp_audio_path = os.path.join(tempfile.gettempdir(), "voice.mp3")
+    tts.save(temp_audio_path)
+    return temp_audio_path
 
 # UI
 st.title("🎬 Quote Video Maker")
@@ -66,11 +89,8 @@ def process_video():
         # Load and resize background video with aspect ratio preservation
         try:
             bg_clip = VideoFileClip(bg_path)
-
-            # Resize based on height to maintain aspect ratio
             bg_clip = bg_clip.resize(height=1920)
 
-            # Adjust width to 1080 via cropping or padding
             if bg_clip.w < 1080:
                 pad_width = 1080 - bg_clip.w
                 bg_clip = bg_clip.margin(left=pad_width//2, right=pad_width//2, color=(0, 0, 0))
@@ -84,11 +104,10 @@ def process_video():
             st.error(f"Error processing background video: {e}")
             return
 
-        # Set duration for text overlay
         duration = min(bg_clip.duration, 6)
         color_rgb = hex_to_rgb(font_color)
 
-        # Generate text clip based on selected animation
+        # Generate text clip based on animation
         if animation == "static":
             txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
         elif animation == "typewriter":
@@ -98,14 +117,28 @@ def process_video():
         else:
             txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
 
+        # Generate voice-over
+        voice_path = generate_voice_over(quote_text)
+        try:
+            voice_audio = AudioFileClip(voice_path).set_duration(duration)
+        except Exception as e:
+            st.error(f"Error loading voice-over: {e}")
+            return
+
         # Overlay text on background
-        final = CompositeVideoClip([bg_clip, txt_clip.set_position("center")]).set_duration(duration)
+        final_video = CompositeVideoClip([bg_clip, txt_clip.set_position("center")])
+        final_video = final_video.set_duration(duration)
+
+        # Set audio
+        final_video = final_video.set_audio(voice_audio)
 
         output_path = os.path.join(tmpdir, "output.mp4")
-        final.write_videofile(output_path, fps=24, codec='libx264', preset="fast", audio=False)
-
-        st.video(output_path)
-        st.success("✅ Video created successfully!")
+        try:
+            final_video.write_videofile(output_path, fps=24, codec='libx264', preset="fast", audio_codec='aac')
+            st.video(output_path)
+            st.success("✅ Video created successfully!")
+        except Exception as e:
+            st.error(f"Error generating final video: {e}")
 
 if generate:
     process_video()
