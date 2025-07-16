@@ -1,152 +1,73 @@
 import streamlit as st
-import os
+from moviepy.editor import VideoFileClip, concatenate_videoclips
 import tempfile
-from moviepy.editor import VideoFileClip, CompositeVideoClip, AudioFileClip, TextClip
-from gtts import gTTS
-import numpy as np
-import textwrap
-from PIL import Image, ImageDraw, ImageFont
+import os
 
-# Compatibility for PIL resampling filter
-try:
-    from PIL import Resampling
-    RESAMPLE_MODE = Resampling.LANCZOS
-except ImportError:
-    RESAMPLE_MODE = Image.LANCZOS
+st.title("Video Combination App")
 
-# Utility functions
-def hex_to_rgb(hex_color):
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+# User inputs for videos
+video_path = st.file_uploader("Upload the main video", type=["mp4", "mov", "avi"])
+bg_path = st.file_uploader("Upload the background video", type=["mp4", "mov", "avi"])
 
-def create_text_image(text, font_path, font_size, color, max_width=800):
-    lines = textwrap.wrap(text, width=25)
-    font = ImageFont.truetype(font_path, font_size)
-    # Determine size
-    width, height = 0, 0
-    line_heights = []
-    for line in lines:
-        size = font.getsize(line)
-        width = max(width, size[0])
-        line_heights.append(size[1])
-        height += size[1]
-    img = Image.new('RGBA', (width + 20, height + 20), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    y = 10
-    for i, line in enumerate(lines):
-        draw.text((10, y), line, font=font, fill=color)
-        y += line_heights[i]
-    return img
+# Check if files are uploaded
+if video_path and bg_path:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video, \
+         tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_bg:
+        # Save uploaded files to temp files
+        temp_video.write(video_path.read())
+        temp_bg.write(bg_path.read())
+        temp_video_path = temp_video.name
+        temp_bg_path = temp_bg.name
 
-def static_clip(text, font_path, color, duration, font_size=90):
-    img = create_text_image(text, font_path, font_size, color)
-    image_path = "/tmp/text.png"
-    img.save(image_path)
-    return ImageClip(image_path).set_duration(duration)
+    try:
+        # Load main video
+        main_clip = VideoFileClip(temp_video_path)
+        st.info("Loaded main video.")
 
-def fadein_clip(text, font_path, color, duration, font_size=90):
-    clip = static_clip(text, font_path, color, duration, font_size)
-    return clip.fadein(2)
+        # Load background video
+        bg_clip = VideoFileClip(temp_bg_path)
+        st.info("Processing background video...")
 
-def typewriter_clip(text, font_path, color, duration, font_size=90):
-    # Using TextClip for simplicity; note that font path must be valid
-    txt_clip = TextClip(text, fontsize=font_size, font=os.path.basename(font_path), color='white').set_duration(duration)
-    return txt_clip
+        # Resize background video height to 1920
+        bg_clip = bg_clip.resize(height=1920)
 
-def generate_voice_over(text):
-    tts = gTTS(text)
-    tmpfile = "/tmp/voice.mp3"
-    tts.save(tmpfile)
-    return tmpfile
+        # Adjust width to 1080 by cropping or padding
+        target_width = 1080
 
-st.set_page_config(layout="wide", page_title="Quote Video Maker")
+        if bg_clip.w < target_width:
+            # Pad width to target with black bars
+            pad_width = target_width - bg_clip.w
+            left_pad = pad_width // 2
+            right_pad = pad_width - left_pad
+            bg_clip = bg_clip.margin(left=left_pad, right=right_pad, color=(0, 0, 0))
+        elif bg_clip.w > target_width:
+            # Crop width to target
+            left_crop = (bg_clip.w - target_width) // 2
+            right_crop = left_crop + target_width
+            bg_clip = bg_clip.crop(x1=left_crop, x2=right_crop)
 
-st.title("🎬 Quote Video Maker")
-quote_text = st.text_area("✍️ Enter your quote:", "Believe in yourself. You're stronger than you think.")
-font_size = 90
-font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # Adjust if necessary
-animation = st.selectbox("🎞️ Select text animation", ["static", "typewriter", "fade in"])
-font_color = st.color_picker("🖌️ Choose font color", "#FFFFFF")
-video_file = st.file_uploader("📹 Upload vertical video (1080x1920)", type=["mp4", "mov", "webm"])
-generate = st.button("Generate Video")
+        # Remove audio if any
+        bg_clip = bg_clip.without_audio()
 
-if generate:
-    if not video_file:
-        st.error("Please upload a background video.")
-    else:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Save uploaded video
-            bg_path = os.path.join(tmpdir, "bg_input.mp4")
-            with open(bg_path, "wb") as f:
-                f.write(video_file.read())
+        # Resize main video if needed (optional)
+        # main_clip = main_clip.resize(height=1920)
 
-            # Step 1: Process background video
-            try:
-                bg_clip = VideoFileClip(bg_path)
-                st.info("Processing background video...")
-                # Resize height to 1920 with high-quality resampling
-                bg_clip = bg_clip.resize(height=1920, method='lanczos')
+        # For demonstration, overlay main video on background or concatenate
+        # Here, just display info
+        st.success("Background video processed successfully.")
 
-                # Crop or pad width to 1080
-                if bg_clip.w < 1080:
-                    pad_width = 1080 - bg_clip.w
-                    bg_clip = bg_clip.margin(left=pad_width//2, right=pad_width//2, color=(0, 0, 0))
-                elif bg_clip.w > 1080:
-                    left_crop = (bg_clip.w - 1080) // 2
-                    right_crop = left_crop + 1080
-                    bg_clip = bg_clip.crop(x1=left_crop, x2=right_crop)
+        # Example: overlay main clip on background (if desired), or just show background
+        # final_clip = concatenate_videoclips([bg_clip, main_clip])  # or other processing
 
-                bg_clip = bg_clip.without_audio()
-                st.success("Background video processed.")
-            except Exception as e:
-                st.error(f"Error processing background video: {e}")
-                st.stop()
+        # Save or preview the final clip as needed
+        # For example, to preview:
+        # st.video(final_clip.ipython_display(width=600))
 
-            # Limit duration to 6 seconds
-            duration = min(bg_clip.duration, 6)
+        # Cleanup temp files
+        os.remove(temp_video_path)
+        os.remove(temp_bg_path)
 
-            # Convert hex color to RGB
-            try:
-                color_rgb = hex_to_rgb(font_color)
-            except Exception as e:
-                st.error(f"Invalid color format: {e}")
-                st.stop()
-
-            # Step 2: Generate text overlay
-            st.info("Generating text overlay...")
-            try:
-                if animation == "static":
-                    txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
-                elif animation == "typewriter":
-                    txt_clip = typewriter_clip(quote_text, font_path, color_rgb, duration)
-                elif animation == "fade in":
-                    txt_clip = fadein_clip(quote_text, font_path, color_rgb, duration)
-                else:
-                    txt_clip = static_clip(quote_text, font_path, color_rgb, duration)
-                st.success("Text overlay created.")
-            except Exception as e:
-                st.error(f"Error creating text overlay: {e}")
-                st.stop()
-
-            # Step 3: Generate voice-over
-            st.info("Generating voice-over...")
-            try:
-                voice_path = generate_voice_over(quote_text)
-                voice_audio = AudioFileClip(voice_path).set_duration(duration)
-                st.success("Voice-over generated.")
-            except Exception as e:
-                st.error(f"Error generating voice-over: {e}")
-                st.stop()
-
-            # Step 4: Combine all elements
-            st.info("Combining elements into final video...")
-            try:
-                final = CompositeVideoClip([bg_clip, txt_clip.set_position("center")]).set_duration(duration)
-                final = final.set_audio(voice_audio)
-
-                output_path = os.path.join(tmpdir, "final_output.mp4")
-                final.write_videofile(output_path, fps=24, codec='libx264', preset="fast", audio_codec='aac')
-                st.video(output_path)
-                st.success("🎉 Video created successfully!")
-            except Exception as e:
-                st.error(f"Error creating final video: {e}")
+    except Exception as e:
+        st.error(f"An error occurred during processing: {e}")
+else:
+    st.info("Please upload both videos to proceed.")
