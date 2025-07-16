@@ -85,7 +85,7 @@ if generate:
                 bg_clip = VideoFileClip(bg_path)
                 st.info("Processing background video...")
                 # Resize height to 1920 with high-quality resampling
-                bg_clip = bg_clip.resize(height=1920, resample=RESAMPLE_MODE)
+                bg_clip = bg_clip.resize(height=1920, method='lanczos')
 
                 # Crop or pad width to 1080
                 if bg_clip.w < 1080:
