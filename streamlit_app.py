@@ -1,9 +1,18 @@
 import streamlit as st
 import os
 import tempfile
-from moviepy.editor import VideoFileClip, CompositeVideoClip, AudioFileClip
+from moviepy.editor import VideoFileClip, CompositeVideoClip, AudioFileClip, TextClip
 from gtts import gTTS
 import numpy as np
+import textwrap
+from PIL import Image, ImageDraw, ImageFont
+
+# Compatibility for PIL resampling filter
+try:
+    from PIL import Resampling
+    RESAMPLE_MODE = Resampling.LANCZOS
+except ImportError:
+    RESAMPLE_MODE = Image.LANCZOS
 
 # Utility functions
 def hex_to_rgb(hex_color):
@@ -11,7 +20,6 @@ def hex_to_rgb(hex_color):
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 def create_text_image(text, font_path, font_size, color, max_width=800):
-    from PIL import Image, ImageDraw, ImageFont
     lines = textwrap.wrap(text, width=25)
     font = ImageFont.truetype(font_path, font_size)
     # Determine size
@@ -41,7 +49,7 @@ def fadein_clip(text, font_path, color, duration, font_size=90):
     return clip.fadein(2)
 
 def typewriter_clip(text, font_path, color, duration, font_size=90):
-    from moviepy.editor import TextClip
+    # Using TextClip for simplicity; note that font path must be valid
     txt_clip = TextClip(text, fontsize=font_size, font=os.path.basename(font_path), color='white').set_duration(duration)
     return txt_clip
 
@@ -76,8 +84,10 @@ if generate:
             try:
                 bg_clip = VideoFileClip(bg_path)
                 st.info("Processing background video...")
-                bg_clip = bg_clip.resize(height=1920)
+                # Resize height to 1920 with high-quality resampling
+                bg_clip = bg_clip.resize(height=1920, resample=RESAMPLE_MODE)
 
+                # Crop or pad width to 1080
                 if bg_clip.w < 1080:
                     pad_width = 1080 - bg_clip.w
                     bg_clip = bg_clip.margin(left=pad_width//2, right=pad_width//2, color=(0, 0, 0))
@@ -92,7 +102,10 @@ if generate:
                 st.error(f"Error processing background video: {e}")
                 st.stop()
 
+            # Limit duration to 6 seconds
             duration = min(bg_clip.duration, 6)
+
+            # Convert hex color to RGB
             try:
                 color_rgb = hex_to_rgb(font_color)
             except Exception as e:
@@ -125,7 +138,7 @@ if generate:
                 st.error(f"Error generating voice-over: {e}")
                 st.stop()
 
-            # Step 4: Combine all
+            # Step 4: Combine all elements
             st.info("Combining elements into final video...")
             try:
                 final = CompositeVideoClip([bg_clip, txt_clip.set_position("center")]).set_duration(duration)
